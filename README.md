@@ -9,8 +9,10 @@ A 3D viewer for infrastructure. Give it a topology file and, if you like, a stre
 States show as they change: a service on fire, down or degraded; a link slow or broken.
 
 Controls:
-- **Camera:** drag to rotate, right-drag to pan, scroll to zoom, or use **Iso**, **3D** and **Top**; **Fit** brings everything back into view, **Rotate** (or `?rotate`) turns it slowly.
-- **Inspect:** hover for a title; click a node, link or group to see its details and connections; Esc clears the selection.
+- **Camera:** drag to rotate, right-drag to pan, scroll to zoom, or use **Iso**, **3D** and **Top**; **Fit** brings everything back into view. **Rotate** cycles counterclockwise, stopped, clockwise, stopped; `?rotate` starts counterclockwise.
+- **Inspect:** hover for a title; click a node, link or group to see its details and connections; Esc clears the selection. Search nodes with **Search** or Cmd+K / Ctrl+K.
+- **Explore:** click legend filters to isolate categories or states; Shift-click combines them. Select a node and press **Blast radius** or B to see its callers and dependencies.
+- **Compare and export:** use **Diff / Compare** for before and after files, and **Export** for PNG, SVG or Mermaid.
 
 ```sh
 make dev        # installs if needed, starts Vite and opens the browser (reuses the tab where it can)
@@ -23,12 +25,16 @@ Or with pnpm directly:
 pnpm install
 pnpm dev        # http://localhost:5173
 pnpm test
+pnpm typecheck
 pnpm build      # dist/
 pnpm artifact   # dist/artifact.html, one self-contained page
 pnpm icons      # regenerate src/lib/icons.json from @iconify-json/logos
 ```
 
-Load your own file with **Open file**, drag and drop, **Paste** (a text box), or `?src=<url>`. Connect a stream with
+Load files or folders with **Edit**, **Open files**, drag and drop, or `?src=<url>`. Edit also accepts pasted text.
+Supported inputs include Terraform `.tf` and `.tf.json` files, `terraform show -json` output, Docker Compose,
+Kubernetes YAML, Topolore JSON and `.topolore.json` snapshots. Terraform references can link across files in a folder.
+Connect a stream with
 the URL box or `?stream=<url>` (`?events=<url>` is the same). **Simulate** plays the sample's recorded events, or makes
 up traffic and incidents for any other file. ◐ switches between light and dark and remembers the choice.
 
@@ -42,7 +48,8 @@ picker only under `pnpm dev`, never in a build; a `name.jsonl` beside `name.hcl`
 
 Like PlantUML links, a URL can hold the whole file: `#infra=<value>`, or `?infra=<value>`.
 - The value is the file's text, deflated (raw, no zlib header), then base64url-encoded. Plain base64url is accepted too.
-- **Share link** builds one for whatever is loaded and copies it to the clipboard.
+- **Share URL** scans the source for potential secrets and offers redaction, a compact link and a downloadable snapshot.
+  Detection is best effort: check sensitive content before sharing. Long URLs may be truncated; snapshots can be dropped back into Topolore.
 - Prefer `#infra=`: the hash never reaches a server, so neither the file nor its length limits do.
 
 From a shell:
@@ -59,7 +66,7 @@ python3 -c "import sys,zlib,base64;print(base64.urlsafe_b64encode(zlib.compress(
   node that is not ok and both ends of slow or broken links.
 - **Highlight** opens a panel for the same terms, with quick picks for `issues`, providers and groups; it keeps the
   `highlight` parameter in the address bar, so the link shares what you see.
-- `?readonly` leaves only watching: no sample picker, Paste, Open file, drag and drop, stream box or Simulate. A `stream`
+- `?readonly` leaves only watching: no sample picker, Edit, Open files, drag and drop, stream box or Simulate. A `stream`
   given in the link still connects.
 
 Colours follow the category of each node: compute blue, data purple, network teal, messaging pink, security indigo,

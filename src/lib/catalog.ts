@@ -19,8 +19,8 @@ const CATEGORY: [RegExp, Category, Shape][] = [
   [/s3|gcs|storage|glacier|blob|bucket|backup|efs|ebs|pvc|volume/, "data", "slab"],
   [/redis|elasticache|elastic-cache|memcache|cache/, "data", "cylinder"],
   [/sqs|sns|kafka|msk|pubsub|eventbridge|kinesis|rabbit|nats|mq|servicebus|eventhub|queue|topic|step-functions/, "messaging", "queue"],
-  [/elb|alb|nlb|lb$|load-?balancer|ingress|gateway|api-gateway|cloudfront|cdn|route53|dns|front-?door|waf|shield|nginx|traefik|envoy|istio|cloudflare|vpc-endpoint/, "network", "hex"],
-  [/iam|kms|secret|vault|cognito|certificate|identity|zitadel|auth0|okta/, "security", "slab"],
+  [/elb|alb|nlb|lb$|load-?balancer|ingress|gateway|api-gateway|cloudfront|cdn|route53|dns|front-?door|waf|shield|nginx|traefik|envoy|istio|cloudflare|vpc-endpoint|^vpc$|subnet|nat-gateway|internet-gateway|route-table/, "network", "hex"],
+  [/iam|kms|secret|vault|cognito|certificate|identity|zitadel|auth0|okta|security-group|firewall/, "security", "slab"],
   [/internet|user|client|browser|mobile/, "edge", "sphere"],
 ];
 
