@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { iconDataUrl, lookOf, type Look } from "./catalog.ts";
+import type { Mark, Overlay } from "../graph/overlay.ts";
+import type { Drawing, Point } from "../export/svg.ts";
+import { iconDataUrl, lookOf, type Look, type Shape } from "./catalog.ts";
+import type { Camera } from "./snapshot.ts";
 import type { Layout } from "./layout.ts";
 import { flowSpeed, type Edge, type Group, type Infra, type InfraNode } from "./model.ts";
 
@@ -29,6 +32,7 @@ interface NodeView {
   base: THREE.Vector3;
   baseColor: THREE.Color;
   flames: THREE.Sprite[];
+  mark: Mark;
 }
 
 interface EdgeView {
@@ -39,7 +43,11 @@ interface EdgeView {
   hit: THREE.Mesh;
   arrow: THREE.Mesh<THREE.ConeGeometry, THREE.MeshStandardMaterial>;
   marker: CSS2DObject;
+  mark: Mark;
 }
+
+/** Below this, a node or link is background: no ring, flames, shadow, marker or hover. */
+const FADED = 0.3;
 
 const readPalette = (): Palette => {
   const css = getComputedStyle(document.documentElement);
@@ -64,6 +72,29 @@ const SHAPES: Record<Look["shape"], () => { geometry: THREE.BufferGeometry; heig
   slab: () => ({ geometry: new THREE.BoxGeometry(38, 8, 32), height: 8 }),
   queue: () => ({ geometry: new THREE.BoxGeometry(44, 12, 24), height: 12 }),
 };
+
+/** Each shape's outline on the ground, around its centre. */
+const ring = (sides: number, radius: number) =>
+  Array.from({ length: sides }, (_, i): Point => [Math.sin((i / sides) * Math.PI * 2) * radius, Math.cos((i / sides) * Math.PI * 2) * radius]);
+const rectangle = (w: number, d: number): Point[] => [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]];
+const FOOTPRINTS: Record<Shape, Point[]> = {
+  box: rectangle(34, 34), cylinder: ring(24, 18), hex: ring(6, 21), sphere: ring(24, 16), slab: rectangle(38, 32), queue: rectangle(44, 24),
+};
+
+/** The outline around a set of screen points (Andrew's monotone chain). */
+function hull(points: Point[]): Point[] {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: Point, a: Point, b: Point) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list: Point[]) => {
+    const out: Point[] = [];
+    for (const p of list) {
+      while (out.length > 1 && cross(out.at(-2)!, out.at(-1)!, p) <= 0) out.pop();
+      out.push(p);
+    }
+    return out.slice(0, -1);
+  };
+  return [...half(sorted), ...half(sorted.reverse())];
+}
 
 const textureCache = new Map<string, THREE.CanvasTexture>();
 
@@ -159,7 +190,7 @@ export class InfraScene {
   private persp = new THREE.PerspectiveCamera(38, 1, 1, 20000);
   private camera: THREE.Camera = this.ortho;
   private controls: OrbitControls;
-  private spin = false;
+  private spin = 0;
   private sun = new THREE.DirectionalLight(0xffffff, 2.4);
   private hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.5);
   private grid?: THREE.GridHelper;
@@ -173,6 +204,7 @@ export class InfraScene {
   private view: View = "iso";
   private selected: Pick = null;
   private highlight: Set<string> | null = null;
+  private overlay: Overlay | null = null;
   private hovered: Pick = null;
   private tween?: { from: THREE.Vector3; to: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; zoom?: [number, number]; t: number };
   private clock = new THREE.Clock();
@@ -242,10 +274,9 @@ export class InfraScene {
     for (const e of infra.edges) this.addEdge(e);
 
 
-    for (const v of this.nodes.values()) this.paintNode(v);
-    for (const v of this.edges.values()) this.paintEdge(v);
     if (this.selected && !this.exists(this.selected)) this.selected = null;
     this.applySelection();
+    this.fade(1); // new meshes start where they belong; only later changes ease
     if (frame) this.setView(this.view, false);
   }
 
@@ -273,6 +304,109 @@ export class InfraScene {
   setHighlight(ids: Set<string> | null) {
     this.highlight = ids;
     this.applySelection();
+  }
+
+  /** A mode's own colours and badges; it wins over the selection and the highlight. Null returns to normal. */
+  setOverlay(overlay: Overlay | null) {
+    this.overlay = overlay;
+    this.applySelection();
+  }
+
+  camera3d(): Camera {
+    return {
+      view: this.view,
+      position: this.camera.position.toArray(),
+      target: this.controls.target.toArray(),
+      zoom: this.camera === this.ortho ? this.ortho.zoom : 1,
+    };
+  }
+
+  restoreCamera(saved: Camera) {
+    this.setView(saved.view, false);
+    this.camera.position.fromArray(saved.position);
+    this.controls.target.fromArray(saved.target);
+    if (this.camera === this.ortho) {
+      this.ortho.zoom = saved.zoom;
+      this.ortho.updateProjectionMatrix();
+    }
+    this.controls.update();
+  }
+
+  /**
+   * One frame at `scale` device pixels per CSS pixel, as a 2D canvas. The WebGL buffer is not preserved between frames,
+   * so it is copied in the same task that renders it.
+   */
+  capture(scale: number): HTMLCanvasElement {
+    const ratio = this.renderer.getPixelRatio();
+    this.renderer.setPixelRatio(scale);
+    this.renderer.render(this.scene, this.camera);
+    const copy = document.createElement("canvas");
+    copy.width = this.renderer.domElement.width;
+    copy.height = this.renderer.domElement.height;
+    copy.getContext("2d")!.drawImage(this.renderer.domElement, 0, 0);
+    this.renderer.setPixelRatio(ratio);
+    this.renderer.render(this.scene, this.camera);
+    return copy;
+  }
+
+  /** What is on screen as flat shapes, seen from the current camera. */
+  drawing(): Drawing {
+    const width = this.host.clientWidth || 1;
+    const height = this.host.clientHeight || 1;
+    this.camera.updateMatrixWorld();
+    const p = this.palette;
+    const project = (x: number, y: number, z: number): Point => {
+      const v = new THREE.Vector3(x, y, z).project(this.camera);
+      return [((v.x + 1) / 2) * width, ((1 - v.y) / 2) * height];
+    };
+    const depth = (v: THREE.Vector3) => v.clone().project(this.camera).z;
+    const css = (color: THREE.Color) => `#${color.getHexString()}`;
+
+    const groups = (this.infra?.groups ?? []).flatMap((g) => {
+      const mesh = this.groups.get(g.id);
+      const at = this.layout?.groups.get(g.id);
+      if (!mesh || !at) return [];
+      const y = mesh.position.y + PLATE / 2;
+      const points = rectangle(at.w, at.d).map(([x, z]) => project(at.x + x, y, at.z + z));
+      const fill = css((mesh.material as THREE.MeshStandardMaterial).color);
+      return [{ level: at.level, points, fill, label: g.label, at: project(at.x - at.w / 2 + 10, y, at.z - at.d / 2 + 16) }];
+    });
+
+    const nodes = [...this.nodes.values()]
+      .sort((a, b) => depth(b.top) - depth(a.top))
+      .map((v) => {
+        const outline = (y: number) => FOOTPRINTS[v.look.shape].map(([x, z]) => project(v.base.x + x, y, v.base.z + z));
+        const top = outline(v.top.y);
+        const state = v.node.state ?? "ok";
+        return {
+          side: hull([...top, ...outline(v.base.y)]),
+          top,
+          color: css(v.body.material.color),
+          opacity: v.mark.opacity,
+          dashed: !!v.mark.ghost,
+          ring: v.ring.visible ? css(v.ring.material.color) : undefined,
+          badge: v.mark.badge ? { text: v.mark.badge, color: v.mark.tint ?? p.accent } : undefined,
+          label: v.node.label,
+          note: state !== "ok" && v.mark.opacity >= FADED ? (v.node.message ?? state) : undefined,
+          at: project(v.label.position.x, v.label.position.y, v.label.position.z),
+        };
+      });
+
+    const edges = [...this.edges.values()].map((v) => ({
+      points: v.curve.getPoints(32).map((q) => project(q.x, q.y, q.z)),
+      color: css(v.tube.material.color),
+      opacity: Math.min(0.95, v.mark.opacity),
+      dashed: !!v.mark.ghost || !!v.edge.undirected,
+    }));
+
+    return {
+      width,
+      height,
+      theme: { bg: p.bg, ink: p.ink, muted: p.muted, line: p.line },
+      groups: groups.sort((a, b) => a.level - b.level),
+      nodes,
+      edges,
+    };
   }
 
   select(pick: Pick, focus = false) {
@@ -343,9 +477,10 @@ export class InfraScene {
   }
 
   /** Turns the view slowly around its centre; kept across view switches, which rebuild the controls. */
-  setAutoRotate(on: boolean) {
-    this.spin = on;
-    this.controls.autoRotate = on;
+  setAutoRotate(direction: number) {
+    this.spin = direction;
+    this.controls.autoRotate = direction !== 0;
+    this.controls.autoRotateSpeed = 0.6 * direction;
   }
 
   zoomBy(factor: number) {
@@ -444,7 +579,7 @@ export class InfraScene {
     label.position.set(at.x, baseY, at.z + at.d / 2 + 6);
     this.content.add(label);
 
-    this.nodes.set(node.id, { node, look, body, decal, ring, label, top, base: new THREE.Vector3(at.x, baseY, at.z), baseColor, flames: [] });
+    this.nodes.set(node.id, { node, look, body, decal, ring, label, top, base: new THREE.Vector3(at.x, baseY, at.z), baseColor, flames: [], mark: { opacity: 1 } });
   }
 
   private addEdge(edge: Edge) {
@@ -475,7 +610,8 @@ export class InfraScene {
     marker.position.copy(curve.getPoint(0.5));
     this.content.add(tube, hit, arrow, marker);
     this.pickables.push(hit);
-    this.edges.set(edge.id, { edge, curve, length, tube, hit, arrow, marker });
+    arrow.visible = !edge.undirected;
+    this.edges.set(edge.id, { edge, curve, length, tube, hit, arrow, marker, mark: { opacity: 1 } });
   }
 
   private clear() {
@@ -507,12 +643,18 @@ export class InfraScene {
     const state = v.node.state ?? "ok";
     const color = v.baseColor.clone();
     if (state === "down") color.lerp(new THREE.Color(p.muted), 0.6);
+    const { tint, ghost, pulse, opacity } = v.mark;
+    const faded = opacity < FADED;
+    if (tint) color.set(tint);
     v.body.material.color.copy(color);
-    v.body.material.emissive.set(state === "fire" ? p.fire : state === "down" ? p.crit : state === "degraded" ? p.warn : "#000000");
-    v.body.material.emissiveIntensity = state === "ok" ? 0 : 0.35;
+    v.body.material.wireframe = !!ghost;
+    v.body.material.emissive.set(tint ?? (state === "fire" ? p.fire : state === "down" ? p.crit : state === "degraded" ? p.warn : "#000000"));
+    v.body.material.emissiveIntensity = state === "ok" && !tint ? 0 : 0.35;
+    v.body.castShadow = !faded && !ghost;
+    if (v.decal) v.decal.visible = !ghost;
     const ringColor = { ok: p.ok, degraded: p.warn, down: p.crit, fire: p.fire, unknown: p.idle }[state];
-    v.ring.material.color.set(ringColor);
-    v.ring.visible = state !== "ok";
+    v.ring.material.color.set(pulse && tint ? tint : ringColor);
+    v.ring.visible = pulse || (state !== "ok" && !faded);
     v.label.element.dataset.state = state;
     v.label.element.querySelector("small")!.textContent = state === "ok" ? "" : (v.node.message ?? state);
 
@@ -532,6 +674,7 @@ export class InfraScene {
       }
       v.flames = [];
     }
+    for (const s of v.flames) s.visible = !faded;
   }
 
   /** Scales a node about its base, so it swells on its plate and the icon stays on top. */
@@ -552,7 +695,8 @@ export class InfraScene {
     // Healthy pipes are coloured by load: teal when light, cobalt when heavy (log scale up to ~2,000 req/s).
     const load = THREE.MathUtils.clamp(Math.log10((v.edge.rps ?? 30) + 1) / 3.3, 0, 1);
     const ok = new THREE.Color(p.flow).lerp(new THREE.Color(p.flowHeavy), load);
-    const color = state === "ok" ? ok : new THREE.Color({ slow: p.warn, broken: p.crit, idle: p.idle }[state]);
+    const color = new THREE.Color(v.mark.tint ?? (state === "ok" ? ok : { slow: p.warn, broken: p.crit, idle: p.idle }[state]));
+    v.tube.material.wireframe = !!v.mark.ghost;
     v.tube.material.color.copy(color);
     v.tube.material.emissive.copy(color);
     v.tube.material.emissiveIntensity = state === "idle" ? 0 : 0.45;
@@ -561,7 +705,7 @@ export class InfraScene {
     v.arrow.material.emissiveIntensity = 0.4;
     v.marker.element.dataset.state = state;
     v.marker.element.textContent = state === "broken" ? "✕" : state === "slow" ? `${v.edge.latencyMs ?? "slow"}${v.edge.latencyMs ? " ms" : ""}` : "";
-    v.marker.visible = state === "broken" || state === "slow";
+    v.marker.visible = (state === "broken" || state === "slow") && v.mark.opacity >= FADED;
   }
 
   private applySelection() {
@@ -575,25 +719,44 @@ export class InfraScene {
       const e = this.edges.get(sel.id);
       if (e) [e.edge.id, e.edge.from, e.edge.to].forEach((id) => related.add(id));
     }
-    const hl = sel ? null : this.highlight;
-    if (hl) {
-      hl.forEach((id) => related.add(id));
-      for (const e of this.edges.values()) if (hl.has(e.edge.from) && hl.has(e.edge.to)) related.add(e.edge.id);
-    }
-    const dim = (id: string) => (hl ? !related.has(id) : sel?.type !== "group" && sel !== null && !related.has(id));
+    const hl = this.overlay ? null : this.highlight;
+    const dim = (id: string) => sel?.type !== "group" && sel !== null && !related.has(id);
+    const nodeOpacity = (id: string) => (hl ? (hl.has(id) ? 1 : 0.15) : dim(id) ? 0.35 : 1);
+    // With a highlight, a link to one hidden end stays faint and one between two hidden nodes all but goes.
+    const edgeOpacity = (e: Edge) =>
+      hl ? (hl.has(e.from) && hl.has(e.to) ? 1 : hl.has(e.from) || hl.has(e.to) ? 0.15 : 0.05) : dim(e.id) ? 0.15 : 1;
     for (const v of this.nodes.values()) {
-      v.body.material.opacity = dim(v.node.id) ? 0.35 : 1;
-      v.label.element.classList.toggle("dim", dim(v.node.id));
-      v.label.element.classList.toggle("selected", sel?.type === "node" && sel.id === v.node.id);
-      v.label.element.classList.toggle("highlighted", !!hl?.has(v.node.id));
+      v.mark = this.overlay ? (this.overlay.nodes.get(v.node.id) ?? { opacity: 1 }) : { opacity: nodeOpacity(v.node.id) };
+      const { classList, style, dataset } = v.label.element;
+      style.opacity = v.mark.opacity < 1 ? String(v.mark.opacity) : "";
+      style.setProperty("--mark", v.mark.tint ?? "");
+      if (v.mark.badge) dataset.badge = v.mark.badge;
+      else delete dataset.badge;
+      classList.toggle("selected", sel?.type === "node" && sel.id === v.node.id);
+      classList.toggle("highlighted", !!hl?.has(v.node.id));
+      this.paintNode(v);
     }
     for (const v of this.edges.values()) {
-      v.tube.material.opacity = dim(v.edge.id) ? 0.15 : 0.95;
-      v.arrow.material.opacity = dim(v.edge.id) ? 0.15 : 1;
+      v.mark = this.overlay ? (this.overlay.edges.get(v.edge.id) ?? { opacity: 1 }) : { opacity: edgeOpacity(v.edge) };
       v.tube.scale.setScalar(1);
+      this.paintEdge(v);
     }
     for (const [id, plate] of this.groups)
       ((plate.children[0] as THREE.LineSegments).material as THREE.LineBasicMaterial).color.set(sel?.type === "group" && sel.id === id ? this.palette.accent : this.palette.line);
+    if (this.reducedMotion) this.fade(1);
+  }
+
+  /** Moves every opacity toward its mark; `k` is the share of the remaining way. */
+  private fade(k: number) {
+    const ease = (material: THREE.Material, target: number) => (material.opacity += (target - material.opacity) * k);
+    for (const v of this.nodes.values()) {
+      ease(v.body.material, v.mark.opacity);
+      if (v.decal) ease((v.decal as THREE.Mesh).material as THREE.Material, v.mark.opacity);
+    }
+    for (const v of this.edges.values()) {
+      ease(v.tube.material, v.mark.opacity * 0.95);
+      ease(v.arrow.material, v.mark.opacity);
+    }
   }
 
   // ---------------------------------------------------------------- camera
@@ -607,8 +770,8 @@ export class InfraScene {
     controls.minZoom = 0.03;
     controls.maxZoom = 20;
     controls.zoomToCursor = true;
-    controls.autoRotate = this.spin;
-    controls.autoRotateSpeed = 0.6;
+    controls.autoRotate = this.spin !== 0;
+    controls.autoRotateSpeed = 0.6 * this.spin;
     return controls;
   }
 
@@ -669,7 +832,8 @@ export class InfraScene {
   private pointerMove = (e: PointerEvent) => {
     if (e.buttons) return;
     const pick = this.pick(e);
-    this.setHover(pick?.type === "group" ? null : pick, e.clientX, e.clientY);
+    const mark = pick && (pick.type === "node" ? this.nodes.get(pick.id)?.mark : this.edges.get(pick.id)?.mark);
+    this.setHover(!mark || mark.opacity < FADED ? null : pick, e.clientX, e.clientY);
   };
 
   private pointerUp = (e: PointerEvent) => {
@@ -704,7 +868,7 @@ export class InfraScene {
       if (tw.t >= 1) this.tween = undefined;
     }
     // A camera glide (Fit, a view switch) would fight the spin and look like it turns backwards: pause it meanwhile.
-    this.controls.autoRotate = this.spin && !this.tween;
+    this.controls.autoRotate = this.spin !== 0 && !this.tween;
     this.controls.update();
 
     const ppu = this.pixelsPerUnit();
@@ -713,6 +877,7 @@ export class InfraScene {
 
     this.animateFlows(dt);
     this.animateStates(time);
+    this.fade(Math.min(1, dt * 9));
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
   };
@@ -733,11 +898,11 @@ export class InfraScene {
   private animateStates(time: number) {
     for (const v of this.nodes.values()) {
       const state = v.node.state ?? "ok";
-      if (state === "ok") continue;
+      if (state === "ok" && !v.mark.pulse) continue;
       const pulse = this.reducedMotion ? 0.5 : (Math.sin(time * (state === "fire" ? 9 : 3.5)) + 1) / 2;
       v.ring.scale.setScalar(1 + pulse * 0.35);
       v.ring.material.opacity = 0.9 - pulse * 0.6;
-      v.body.material.emissiveIntensity = state === "down" ? 0.15 : 0.2 + pulse * (state === "fire" ? 0.6 : 0.35);
+      v.body.material.emissiveIntensity = state === "down" && !v.mark.pulse ? 0.15 : 0.2 + pulse * (state === "fire" ? 0.6 : 0.35);
       if (state === "fire") this.throb(v, 1 + 0.07 * pulse);
       v.flames.forEach((s, k) => {
         const seed = s.userData.seed as number;

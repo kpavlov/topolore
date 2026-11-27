@@ -44,7 +44,9 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); ove
 .node-label[data-state="fire"] small { color: var(--fire); }
 .node-label[data-state="down"] small { color: var(--crit); }
 .node-label[data-state="degraded"] small { color: var(--warn); }
-.node-label.dim { opacity: 0.3; }
+/* A mode's badge, such as a blast-radius hop or a diff sign, above the name. */
+.node-label[data-badge]::before { content: attr(data-badge); display: table; margin: 0 auto 2px; min-width: 18px; padding: 1px 5px;
+  border-radius: 99px; background: var(--mark, var(--accent)); color: #fff; font: 600 10px var(--mono); text-shadow: none; }
 .node-label.selected b { color: var(--accent); }
 .group-label { display: flex; gap: 6px; align-items: center; font: 600 11px var(--mono); color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
@@ -54,6 +56,39 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); ove
 .edge-marker[data-state="slow"] { background: var(--warn); }
 .labels.far .node-label small, .labels.far .group-label span { display: none; }
 .labels.far .node-label { font-size: 9px; }
-.labels.tiny .node-label:not([data-state="down"]):not([data-state="fire"]):not(.selected):not(.highlighted) { display: none; }
+.labels.tiny .node-label:not([data-state="down"]):not([data-state="fire"]):not(.selected):not(.highlighted):not([data-badge]) { display: none; }
 .labels.tiny .group-label { font-size: 9px; }
 .node-label.highlighted b { color: var(--scene); background: var(--accent); padding: 1px 6px; border-radius: 99px; text-shadow: none; }
+
+/* Controls and panels shared by the app and its components. */
+.panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); backdrop-filter: blur(6px); }
+input:not([type]), select, button, .button { font: inherit; font-size: 13px; color: var(--ink); background: transparent;
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+input:not([type]) { width: 230px; cursor: text; }
+button:hover, .button:hover { border-color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: 0.5; cursor: default; }
+:focus-visible, .button:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.badge { font: 600 11px var(--mono); text-transform: uppercase; padding: 4px 8px; border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--idle); flex: none; }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+.dot.fire { background: var(--fire); box-shadow: 0 0 6px var(--fire); } .dot.flow { background: var(--flow); }
+.warn { color: var(--warn); } .crit { color: var(--crit); } .fire { color: var(--fire); } .ok { color: var(--ok); }
+.state { font: 600 12px var(--mono); }
+h2 { font-size: 15px; margin: 0; overflow-wrap: anywhere; }
+h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 14px 0 4px; }
+code { font: 12px var(--mono); color: var(--muted); }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 10px 0 0; font-size: 12px; }
+dt { color: var(--muted); overflow-wrap: anywhere; } dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+ul { list-style: none; margin: 0; padding: 0; }
+dialog { width: min(760px, calc(100% - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+dialog form { display: grid; gap: 10px; }
+dialog p { margin: 0; color: var(--muted); font-size: 13px; }
+dialog p.crit { color: var(--crit); }
+textarea { width: 100%; height: min(60vh, 480px); resize: vertical; font: 12px/1.5 var(--mono); color: var(--ink);
+  background: var(--scene); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 720px) { input:not([type]) { width: 150px; } }

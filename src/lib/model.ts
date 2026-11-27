@@ -1,3 +1,5 @@
+import { lookOf } from "./catalog.ts";
+
 export type NodeState = "ok" | "degraded" | "down" | "fire" | "unknown";
 export type EdgeState = "ok" | "slow" | "broken" | "idle";
 export type FlowSpeed = "slow" | "medium" | "fast";
@@ -20,6 +22,10 @@ export interface InfraNode {
   message?: string;
   metrics?: Record<string, number | string>;
   props?: Record<string, unknown>;
+  /** Where the node was declared, when the format tells. */
+  sourceFile?: string;
+  lineStart?: number;
+  lineEnd?: number;
 }
 
 /** Traffic from one node to another, in the direction requests flow. */
@@ -36,6 +42,8 @@ export interface Edge {
   speed?: FlowSpeed;
   errorRate?: number;
   message?: string;
+  /** The ends are related but neither depends on the other, such as two services on one network. */
+  undirected?: boolean;
 }
 
 export interface Infra {
@@ -57,10 +65,10 @@ export type Update =
  * How fast a link's flow moves. An explicit `speed` wins; then measured `latencyMs` (under 50 ms fast, under 250 ms
  * medium, else slow); then where the ends sit, see {@link placementSpeed}; with nothing to go on, medium.
  */
-export function flowSpeed(e: Pick<Edge, "speed" | "latencyMs" | "from" | "to">, infra?: Infra): FlowSpeed {
+export function flowSpeed(e: Pick<Edge, "speed" | "latencyMs"> & Partial<Pick<Edge, "from" | "to">>, infra?: Infra): FlowSpeed {
   if (e.speed) return e.speed;
   if (e.latencyMs !== undefined) return e.latencyMs < 50 ? "fast" : e.latencyMs < 250 ? "medium" : "slow";
-  return infra ? placementSpeed(infra, e.from, e.to) : "medium";
+  return infra && e.from && e.to ? placementSpeed(infra, e.from, e.to) : "medium";
 }
 
 /**
@@ -168,7 +176,8 @@ export function applyUpdate(infra: Infra, update: Update): boolean {
 /**
  * Nodes a highlight names. Each term, case-insensitive, matches a node's id or label, a kind or kind prefix (`aws`,
  * `aws.rds`, `k8s.deployment`), or a group's id or label (every node inside it). `issues` matches nodes that are not ok
- * and both ends of slow or broken links.
+ * and both ends of slow or broken links. `category:data` matches a category; `state:fire`, `state:down` (with both ends
+ * of broken links) and `state:degraded` (with both ends of slow links) match a state.
  */
 export function highlighted(infra: Infra, terms: string[]): Set<string> {
   const groups = new Map(infra.groups.map((g) => [g.id, g]));
@@ -184,6 +193,17 @@ export function highlighted(infra: Infra, terms: string[]): Set<string> {
     if (term === "issues") {
       for (const n of infra.nodes) if ((n.state ?? "ok") !== "ok") ids.add(n.id);
       for (const e of infra.edges) if (e.state === "slow" || e.state === "broken") ids.add(e.from).add(e.to);
+      continue;
+    }
+    if (term.startsWith("category:")) {
+      for (const n of infra.nodes) if (lookOf(n.kind).category === term.slice(9)) ids.add(n.id);
+      continue;
+    }
+    if (term.startsWith("state:")) {
+      const state = term.slice(6);
+      for (const n of infra.nodes) if ((n.state ?? "ok") === state) ids.add(n.id);
+      const link = state === "down" ? "broken" : state === "degraded" ? "slow" : undefined;
+      for (const e of infra.edges) if (link && e.state === link) ids.add(e.from).add(e.to);
       continue;
     }
     for (const n of infra.nodes) {

@@ -5,7 +5,7 @@ const toBase64Url = (bytes: Uint8Array) =>
 const fromBase64Url = (text: string) =>
   Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
-const pipe = async (bytes: Uint8Array, stream: CompressionStream | DecompressionStream) =>
+const pipe = async (bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream) =>
   new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 
 export async function encodeInfra(text: string): Promise<string> {
