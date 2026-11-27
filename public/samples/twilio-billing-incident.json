@@ -1,0 +1,202 @@
+{
+  "title": "Twilio billing incident · 18–20 July 2013 (schematic)",
+  "links": [
+    {
+      "label": "Twilio postmortem",
+      "url": "https://www.twilio.com/en-us/blog/company/communications/billing-incident-post-mortem-breakdown-analysis-and-root-cause-html"
+    }
+  ],
+  "groups": [
+    {
+      "id": "twilio",
+      "label": "Twilio · schematic",
+      "kind": "saas.twilio"
+    },
+    {
+      "id": "communications",
+      "label": "Communications · operating",
+      "kind": "saas.twilio",
+      "parent": "twilio"
+    },
+    {
+      "id": "billing",
+      "label": "Billing and account balances",
+      "kind": "saas.twilio",
+      "parent": "twilio"
+    },
+    {
+      "id": "redis",
+      "label": "Redis cluster · schematic",
+      "kind": "redis",
+      "parent": "billing"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "customers",
+      "label": "Twilio customers",
+      "kind": "customers"
+    },
+    {
+      "id": "end-users",
+      "label": "Recipients",
+      "kind": "users"
+    },
+    {
+      "id": "sms",
+      "label": "SMS delivery",
+      "kind": "saas.twilio",
+      "parent": "communications"
+    },
+    {
+      "id": "voice",
+      "label": "Voice calls",
+      "kind": "saas.twilio",
+      "parent": "communications"
+    },
+    {
+      "id": "usage",
+      "label": "Billable usage and pricing",
+      "kind": "saas.twilio",
+      "parent": "billing"
+    },
+    {
+      "id": "billing-service",
+      "label": "Billing service",
+      "kind": "saas.twilio",
+      "parent": "billing"
+    },
+    {
+      "id": "balance",
+      "label": "In-flight balances · Redis primary",
+      "kind": "redis",
+      "parent": "redis"
+    },
+    {
+      "id": "replica-a",
+      "label": "Redis replica A · illustrative",
+      "kind": "redis",
+      "parent": "redis"
+    },
+    {
+      "id": "replica-b",
+      "label": "Redis replica B · illustrative",
+      "kind": "redis",
+      "parent": "redis"
+    },
+    {
+      "id": "ledger",
+      "label": "Independent relational ledger",
+      "kind": "database",
+      "parent": "billing"
+    },
+    {
+      "id": "recharge",
+      "label": "Auto-recharge",
+      "kind": "saas.twilio",
+      "parent": "billing"
+    },
+    {
+      "id": "payment",
+      "label": "Credit card processor",
+      "kind": "external"
+    },
+    {
+      "id": "account",
+      "label": "Affected customer accounts",
+      "kind": "customers",
+      "parent": "billing"
+    },
+    {
+      "id": "monitoring",
+      "label": "Billing monitoring",
+      "kind": "generic",
+      "parent": "billing"
+    },
+    {
+      "id": "reports",
+      "label": "Usage reports / pricing",
+      "kind": "saas.twilio",
+      "parent": "billing"
+    }
+  ],
+  "edges": [
+    {
+      "from": "customers",
+      "to": "sms"
+    },
+    {
+      "from": "customers",
+      "to": "voice"
+    },
+    {
+      "from": "sms",
+      "to": "end-users",
+      "label": "Message delivery"
+    },
+    {
+      "from": "voice",
+      "to": "end-users",
+      "label": "Calls"
+    },
+    {
+      "from": "sms",
+      "to": "usage",
+      "label": "Billable usage (schematic)"
+    },
+    {
+      "from": "voice",
+      "to": "usage",
+      "label": "Billable usage (schematic)"
+    },
+    {
+      "from": "usage",
+      "to": "billing-service"
+    },
+    {
+      "from": "billing-service",
+      "to": "balance",
+      "label": "Balance updates"
+    },
+    {
+      "from": "billing-service",
+      "to": "ledger",
+      "label": "Independent bookkeeping"
+    },
+    {
+      "from": "billing-service",
+      "to": "recharge",
+      "label": "Auto-recharge"
+    },
+    {
+      "from": "recharge",
+      "to": "payment",
+      "label": "Payment attempts"
+    },
+    {
+      "from": "recharge",
+      "to": "account",
+      "label": "Account status (schematic)"
+    },
+    {
+      "from": "reports",
+      "to": "billing-service",
+      "label": "Usage pricing (schematic)"
+    },
+    {
+      "from": "replica-a",
+      "to": "balance",
+      "label": "Replication (schematic)"
+    },
+    {
+      "from": "replica-b",
+      "to": "balance",
+      "label": "Replication (schematic)"
+    },
+    {
+      "from": "monitoring",
+      "to": "billing-service",
+      "label": "Monitoring (schematic)"
+    }
+  ]
+}

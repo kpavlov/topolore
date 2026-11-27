@@ -1,0 +1,59 @@
+// Cloudflare postmortem: https://blog.cloudflare.com/post-mortem-on-cloudflare-control-plane-and-analytics-outage/
+// Nodes and dependencies are schematic. Product-level state changes summarize affected subsets, not every customer or instance.
+// The global traffic-serving network remained operational. The exact start time of the November 3 bootstrap was not published.
+// November 3 at 15:00 UTC and 18:00 UTC are illustrative markers for morning bootstrap and the reported three-hour configuration-management rebuild.
+{"at":"2023-11-02T08:50:00Z","type":"node","id":"utility","state":"degraded","message":"One utility feed fails; generators supplement the remaining feed."}
+{"at":"2023-11-02T08:50:00Z","type":"node","id":"generators","message":"The facility starts generators; Cloudflare was not notified of the power-source change."}
+{"at":"2023-11-02T11:40:00Z","type":"node","id":"utility","state":"down","message":"Approximately 11:40 UTC: a transformer ground fault occurs. The postmortem says its relationship to the earlier maintenance was unconfirmed."}
+{"at":"2023-11-02T11:40:00Z","type":"node","id":"generators","state":"down","message":"The protective response also shuts down the facility generators."}
+{"at":"2023-11-02T11:40:00Z","type":"node","id":"ups","state":"degraded","message":"UPS batteries temporarily support the facility; equipment begins failing after roughly four minutes."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"router-1","state":"down","message":"The first of the two facility routers is shown offline at the reported detection time."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"router-2","state":"down","message":"Both PDX-04 routers go offline; Cloudflare cannot reach them directly or out of band."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"control","state":"degraded","message":"Control-plane and analytics impact begins; the global traffic-serving network remains operational."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"dashboard","state":"degraded","message":"Schematic: some control-plane changes are affected; impact varies by product and customer."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"api","state":"degraded","message":"Schematic: some control-plane changes are affected; impact varies by product and customer."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"workers","state":"degraded","message":"Schematic: some control-plane changes are affected; impact varies by product and customer."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"access","state":"degraded","message":"Schematic: some control-plane changes are affected; impact varies by product and customer."}
+{"at":"2023-11-02T11:44:00Z","type":"node","id":"lb","state":"degraded","message":"Schematic: some control-plane changes are affected; impact varies by product and customer."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"ups","state":"down","message":"By 12:01 UTC, UPS batteries are exhausted and the facility has lost power."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"kafka","state":"down","message":"Kafka log processing in PDX-04 is unavailable."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"clickhouse","state":"down","message":"ClickHouse analytics in PDX-04 is unavailable."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"config","state":"down","message":"Facility configuration management is unavailable."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"analytics","state":"degraded","message":"Analytics reporting is affected."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"logs","state":"degraded","message":"Raw log services are unavailable for most customers."}
+{"at":"2023-11-02T12:01:00Z","type":"node","id":"stream","state":"degraded","message":"Some newer services, including new Stream uploads, are affected."}
+{"at":"2023-11-02T12:01:00Z","type":"edge","id":"analytics->clickhouse","state":"broken","message":"Schematic: analytics depends on the PDX-04 ClickHouse service."}
+{"at":"2023-11-02T12:01:00Z","type":"edge","id":"logs->kafka","state":"broken","message":"Schematic: log processing depends on the PDX-04 Kafka service."}
+{"at":"2023-11-02T12:28:00Z","type":"node","id":"utility","message":"Cloudflare receives the facility operator’s first notification of a power issue."}
+{"at":"2023-11-02T12:48:00Z","type":"node","id":"generators","state":"ok","message":"Generators restart and some facility power returns, but faulty breakers prevent Cloudflare circuits from being restored."}
+{"at":"2023-11-02T12:48:00Z","type":"node","id":"breakers","state":"down","message":"Faulty circuit breakers prevent power from returning to Cloudflare circuits."}
+{"at":"2023-11-02T13:40:00Z","type":"node","id":"control","message":"Cloudflare decides to fail over the affected portion of the control plane to disaster-recovery sites in Europe."}
+{"at":"2023-11-02T13:43:00Z","type":"group","id":"eu-dr","label":"Europe · disaster recovery (schematic)","kind":"cloudflare"}
+{"at":"2023-11-02T13:43:00Z","type":"node","id":"dr-control","state":"degraded","message":"First disaster-recovery services are started; failing API requests create a thundering herd.","label":"DR control services","kind":"cloudflare","parent":"eu-dr"}
+{"at":"2023-11-02T13:43:00Z","type":"edge","from":"control","to":"dr-control","label":"DR failover (schematic)"}
+{"at":"2023-11-02T13:43:00Z","type":"node","id":"dr-limits","message":"Schematic timing: rate limits are used after failover to bring request volume under control; the exact time is not given.","label":"DR rate limiting (schematic)","kind":"cloudflare","parent":"eu-dr"}
+{"at":"2023-11-02T13:43:00Z","type":"edge","from":"dr-limits","to":"dr-control","label":"Request control (schematic)"}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"dr-control","state":"ok","message":"Services successfully moved to the DR site are stable; most customers are no longer directly impacted."}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"control","state":"ok","message":"Most affected control-plane functions are restored; some products and logging remain unavailable or need manual work."}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"dashboard","state":"ok","message":"Schematic: most customer-facing control-plane impact has been mitigated; individual product timings are not specified."}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"api","state":"ok","message":"Schematic: most customer-facing control-plane impact has been mitigated; individual product timings are not specified."}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"workers","state":"ok","message":"Schematic: most customer-facing control-plane impact has been mitigated; individual product timings are not specified."}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"access","state":"ok","message":"Schematic: most customer-facing control-plane impact has been mitigated; individual product timings are not specified."}
+{"at":"2023-11-02T17:57:00Z","type":"node","id":"lb","state":"ok","message":"Schematic: most customer-facing control-plane impact has been mitigated; individual product timings are not specified."}
+{"at":"2023-11-02T22:48:00Z","type":"node","id":"utility","state":"ok","message":"Failed breakers are replaced and both utility feeds are restored; clean power is confirmed."}
+{"at":"2023-11-02T22:48:00Z","type":"node","id":"breakers","state":"ok","message":"Failed breakers have been replaced; clean utility power is confirmed."}
+{"at":"2023-11-02T22:48:00Z","type":"node","id":"ups","state":"unknown","message":"Clean facility power is confirmed; the postmortem does not specify the UPS battery recovery time."}
+{"at":"2023-11-03T15:00:00Z","type":"node","id":"bootstrap","message":"Illustrative time: the team begins the reported morning bootstrap, starting with network equipment and configuration management. Exact start time was not published.","label":"PDX-04 bootstrap (schematic)","kind":"compute","parent":"pdx04"}
+{"at":"2023-11-03T15:00:00Z","type":"edge","from":"bootstrap","to":"config","label":"Recovery work (schematic)"}
+{"at":"2023-11-03T18:00:00Z","type":"node","id":"bootstrap","message":"Illustrative time: configuration-management rebuild took about three hours; other servers are then rebuilt with dependencies respected."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"router-1","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"router-2","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"config","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"kafka","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"clickhouse","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"analytics","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"logs","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"node","id":"stream","state":"ok","message":"All services were restored by 04:25 UTC; individual component recovery times are not stated."}
+{"at":"2023-11-04T04:25:00Z","type":"edge","id":"analytics->clickhouse","state":"ok","message":"Analytics service restored by the reported full-recovery time."}
+{"at":"2023-11-04T04:25:00Z","type":"edge","id":"logs->kafka","state":"ok","message":"Log processing restored by the reported full-recovery time; some historical logs cannot be recovered."}
+{"at":"2023-11-04T04:25:00Z","type":"remove","id":"bootstrap","message":"Schematic bootstrap phase ends at the reported full-recovery time."}

@@ -75,7 +75,7 @@ test("replay transitions distinguish added, changed and removed nodes", () => {
 });
 
 test("bundled recordings apply to their starting topologies", () => {
-  for (const name of ["azure-incident", "github-actions-incident"]) {
+  for (const name of ["azure-incident", "github-actions-incident", "cloudflare-pdx-incident", "aws-2021-incident", "twilio-billing-incident"]) {
     const file = (ext: string) => readFileSync(new URL(`../public/samples/${name}.${ext}`, import.meta.url), "utf8");
     const infra = normalize(JSON.parse(file("json")));
     for (const [, update] of recording(file("jsonl")).events) {
@@ -85,9 +85,18 @@ test("bundled recordings apply to their starting topologies", () => {
     if (name === "azure-incident") {
       assert.equal(infra.nodes.find((n) => n.id === "services")?.state, "ok");
       assert.ok(!infra.nodes.some((n) => n.id === "device"));
-    } else {
+    } else if (name === "github-actions-incident") {
       assert.ok(!infra.nodes.some((n) => n.id === "config" || n.id === "recovery"));
       assert.equal(infra.nodes.find((n) => n.id === "runner-pool")?.state, "ok");
+    } else if (name === "cloudflare-pdx-incident") {
+      assert.equal(infra.nodes.find((n) => n.id === "logs")?.state, "ok");
+      assert.ok(!infra.nodes.some((n) => n.id === "bootstrap"));
+    } else if (name === "aws-2021-incident") {
+      assert.equal(infra.nodes.find((n) => n.id === "eventbridge")?.state, "ok");
+      assert.equal(infra.nodes.find((n) => n.id === "network")?.state, "ok");
+    } else {
+      assert.equal(infra.nodes.find((n) => n.id === "billing-service")?.state, "ok");
+      assert.ok(!infra.nodes.some((n) => n.id === "refund-work"));
     }
   }
 });
@@ -108,7 +117,7 @@ test("sample index points to existing topology and recording files", () => {
   const path = new URL("../public/samples/", import.meta.url);
   const index = JSON.parse(readFileSync(new URL("index.json", path), "utf8")) as { id: string; file: string; events?: string; group: string }[];
   assert.equal(new Set(index.map((sample) => sample.id)).size, index.length);
-  assert.equal(index.filter((sample) => sample.group === "Postmortems").length, 2);
+  assert.equal(index.filter((sample) => sample.group === "Postmortems").length, 5);
   for (const sample of index) for (const file of [sample.file, sample.events].filter((file): file is string => !!file))
     assert.ok(readFileSync(new URL(file, path)).length, file);
 });
@@ -139,4 +148,47 @@ test("Azure incident keeps residual failures and the device until its reported r
   assert.equal(at("17:50:00").nodes.find((node) => node.id === "device")?.state, "degraded");
   assert.ok(!at("19:32:00").nodes.some((node) => node.id === "device"));
   assert.equal(at("19:43:00").nodes.find((node) => node.id === "services")?.state, "ok");
+});
+
+test("Cloudflare PDX incident keeps data plane up and log processing impaired until full recovery", () => {
+  const file = (ext: string) => readFileSync(new URL(`../public/samples/cloudflare-pdx-incident.${ext}`, import.meta.url), "utf8");
+  const base = normalize(JSON.parse(file("json")));
+  const { events, start } = recording(file("jsonl"));
+  const at = (time: string) => recordingState(base, events, (Date.parse(time) - start!) / 1000);
+  const failure = at("2023-11-02T12:01:00Z");
+  assert.equal(failure.nodes.find((node) => node.id === "edge-network")?.state, "ok");
+  assert.equal(failure.nodes.find((node) => node.id === "kafka")?.state, "down");
+  const recoveredControl = at("2023-11-02T17:57:00Z");
+  assert.equal(recoveredControl.nodes.find((node) => node.id === "dr-control")?.state, "ok");
+  assert.equal(recoveredControl.nodes.find((node) => node.id === "logs")?.state, "degraded");
+  assert.equal(at("2023-11-04T04:25:00Z").nodes.find((node) => node.id === "logs")?.state, "ok");
+});
+
+test("AWS incident separates DNS mitigation, network recovery and EventBridge backlog", () => {
+  const file = (ext: string) => readFileSync(new URL(`../public/samples/aws-2021-incident.${ext}`, import.meta.url), "utf8");
+  const base = normalize(JSON.parse(file("json")));
+  const { events, start } = recording(file("jsonl"));
+  const at = (time: string) => recordingState(base, events, (Date.parse(`2021-12-07T${time}-08:00`) - start!) / 1000);
+  const dns = at("09:28:00");
+  assert.equal(dns.nodes.find((node) => node.id === "dns")?.state, "ok");
+  assert.equal(dns.nodes.find((node) => node.id === "network")?.state, "fire");
+  assert.equal(dns.nodes.find((node) => node.id === "lambda")?.state, "ok");
+  assert.equal(at("12:35:00").nodes.find((node) => node.id === "eventbridge")?.state, "down");
+  assert.equal(at("14:22:00").nodes.find((node) => node.id === "network")?.state, "ok");
+  assert.equal(at("14:35:00").nodes.find((node) => node.id === "eventbridge")?.state, "degraded");
+  assert.equal(at("18:40:00").nodes.find((node) => node.id === "eventbridge")?.state, "ok");
+});
+
+test("Twilio billing incident keeps delivery operational through shutdown and recurrence", () => {
+  const file = (ext: string) => readFileSync(new URL(`../public/samples/twilio-billing-incident.${ext}`, import.meta.url), "utf8");
+  const base = normalize(JSON.parse(file("json")));
+  const { events, start } = recording(file("jsonl"));
+  const at = (time: string) => recordingState(base, events, (Date.parse(time) - start!) / 1000);
+  const shutdown = at("2013-07-18T11:10:00Z");
+  assert.equal(shutdown.nodes.find((node) => node.id === "billing-service")?.state, "down");
+  assert.equal(shutdown.nodes.find((node) => node.id === "sms")?.state, "ok");
+  assert.equal(shutdown.nodes.find((node) => node.id === "voice")?.state, "ok");
+  assert.equal(at("2013-07-18T18:58:00Z").nodes.find((node) => node.id === "billing-service")?.state, "ok");
+  assert.equal(at("2013-07-18T19:36:00Z").nodes.find((node) => node.id === "billing-service")?.state, "down");
+  assert.equal(at("2013-07-20T03:14:00Z").nodes.find((node) => node.id === "billing-service")?.state, "ok");
 });

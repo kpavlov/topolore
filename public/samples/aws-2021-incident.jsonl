@@ -1,0 +1,49 @@
+// AWS post-event review: https://aws.amazon.com/message/12721/
+// Times are those in the review, expressed as PST (UTC−08:00). Nodes and links are schematic, not an AWS infrastructure map.
+// Multiple services are shown as degraded at the incident onset for visualization; exact onset times are not given for every service.
+// Healthy workload nodes represent the review’s distinction between affected control planes and unaffected existing instances, direct storage access, Lambda and DNS answers.
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"scale","state":"degraded","message":"Automated scaling triggers unexpected connection activity from internal clients; AWS later disables the scaling activity."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"clients","state":"degraded","message":"A connection surge and retries contribute to persistent congestion between the networks."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"network","state":"fire","message":"Networking devices connecting the internal and main networks are overwhelmed by connection activity."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"monitoring","state":"degraded","message":"Real-time internal monitoring is impaired; responders rely on logs."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"dns","state":"degraded","message":"Operators identify elevated internal DNS errors."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"deploy","state":"degraded","message":"Internal deployment systems are impacted, slowing remediation."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"route53-api","state":"degraded","message":"Route 53 change APIs are impaired; existing DNS answers continue to work."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"console","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"sts","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"cloudwatch","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"vpce","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"apigw","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"eventbridge","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"ecs","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"fargate","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"node","id":"connect","state":"degraded","message":"Schematic: this capability was affected during the incident; the review does not give an exact onset time for each one."}
+{"at":"2021-12-07T07:30:00-08:00","type":"edge","id":"clients->network","state":"slow","message":"Schematic: network congestion and retries."}
+{"at":"2021-12-07T07:33:00-08:00","type":"node","id":"ec2-api","state":"degraded","message":"EC2 API latency and errors increase; running instances are unaffected."}
+{"at":"2021-12-07T07:33:00-08:00","type":"node","id":"ec2-control","state":"degraded","message":"EC2 control-plane availability is affected; new instance launches are impaired."}
+{"at":"2021-12-07T07:33:00-08:00","type":"node","id":"rds-api","state":"degraded","message":"Schematic: creating RDS resources is affected by new-instance launch failures."}
+{"at":"2021-12-07T07:33:00-08:00","type":"node","id":"elb-api","state":"degraded","message":"Schematic: new ELB provisioning and instance registration are delayed; existing load balancers remain healthy."}
+{"at":"2021-12-07T08:22:00-08:00","type":"node","id":"health","state":"ok","message":"AWS is able to update the Service Health Dashboard; earlier failover was impaired."}
+{"at":"2021-12-07T09:28:00-08:00","type":"node","id":"dns","state":"ok","message":"Internal DNS traffic has been moved away from congested paths and DNS resolution errors recover."}
+{"at":"2021-12-07T09:28:00-08:00","type":"node","id":"dns-reroute","message":"Schematic representation of the completed DNS traffic move; not a claim of a specific new device.","label":"DNS traffic reroute (schematic)","kind":"aws.route53","parent":"internal"}
+{"at":"2021-12-07T09:28:00-08:00","type":"edge","from":"clients","to":"dns-reroute","label":"Rerouted DNS (schematic)"}
+{"at":"2021-12-07T09:28:00-08:00","type":"edge","from":"dns-reroute","to":"dns","label":"DNS path (schematic)"}
+{"at":"2021-12-07T09:28:00-08:00","type":"node","id":"eventbridge","state":"degraded","message":"EventBridge sees some improvement after DNS errors recover, but service impact continues."}
+{"at":"2021-12-07T12:35:00-08:00","type":"node","id":"eventbridge","state":"down","message":"Operators disable EventBridge event delivery during mitigation to reduce network load."}
+{"at":"2021-12-07T13:15:00-08:00","type":"node","id":"ec2-api","state":"degraded","message":"EC2 API errors and latency start improving; new instance launches have not yet recovered."}
+{"at":"2021-12-07T13:34:00-08:00","type":"node","id":"network","state":"degraded","message":"Congestion significantly improves as mitigation actions continue."}
+{"at":"2021-12-07T13:35:00-08:00","type":"node","id":"apigw","state":"degraded","message":"API Gateway begins recovering; affected servers are recycled as EC2 APIs recover."}
+{"at":"2021-12-07T13:35:00-08:00","type":"node","id":"ecs","state":"ok","message":"Most container-related API error rates return to normal; existing tasks and pods had remained operational."}
+{"at":"2021-12-07T13:35:00-08:00","type":"node","id":"fargate","state":"degraded","message":"Fargate still faces elevated load and capacity errors while pools are replenished."}
+{"at":"2021-12-07T14:22:00-08:00","type":"node","id":"network","state":"ok","message":"All networking devices have recovered."}
+{"at":"2021-12-07T14:22:00-08:00","type":"edge","id":"clients->network","state":"ok","message":"Schematic: the internal-to-main network path has recovered."}
+{"at":"2021-12-07T14:22:00-08:00","type":"node","id":"console","state":"ok","message":"AWS Console access is fully restored."}
+{"at":"2021-12-07T14:30:00-08:00","type":"node","id":"route53-api","state":"ok","message":"Route 53 change APIs recover; existing DNS answers had remained operational."}
+{"at":"2021-12-07T14:35:00-08:00","type":"node","id":"eventbridge","state":"degraded","message":"Event delivery is re-enabled; delivery latency remains elevated while the backlog is processed."}
+{"at":"2021-12-07T14:40:00-08:00","type":"node","id":"ec2-api","state":"ok","message":"New EC2 instance launches have recovered."}
+{"at":"2021-12-07T14:40:00-08:00","type":"node","id":"ec2-control","state":"ok","message":"Schematic: the documented new-instance launch recovery is complete."}
+{"at":"2021-12-07T16:28:00-08:00","type":"node","id":"sts","state":"ok","message":"STS fully recovers after earlier improvement in latency."}
+{"at":"2021-12-07T16:37:00-08:00","type":"node","id":"apigw","state":"ok","message":"API Gateway has largely recovered; low levels of errors and throttling may continue for several hours."}
+{"at":"2021-12-07T16:41:00-08:00","type":"node","id":"connect","state":"ok","message":"Amazon Connect resumes normal operations after the affected API Gateway recovers."}
+{"at":"2021-12-07T17:00:00-08:00","type":"node","id":"fargate","state":"degraded","message":"Fargate API error rates begin returning to normal; some 4 vCPU capacity errors continue for several hours."}
+{"at":"2021-12-07T18:40:00-08:00","type":"node","id":"eventbridge","state":"ok","message":"EventBridge delivery latency recovers after the backlog is processed."}
