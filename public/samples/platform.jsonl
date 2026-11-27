@@ -9,14 +9,15 @@
 {"t": 5, "type": "edge", "id": "bff->checkout", "rps": 240}
 {"t": 6, "type": "edge", "id": "checkout->payments", "rps": 380}
 {"t": 6, "type": "edge", "id": "payments->stripe", "rps": 380}
-{"t": 9, "type": "node", "id": "web", "state": "degraded", "message": "HPA scaling 12 → 30 pods", "metrics": {"cpu": 0.86}}
+{"t": 9, "type": "node", "id": "web", "state": "degraded", "message": "HPA scaling 12 → 30 pods", "metrics": {"cpu": 0.86, "replicas": 18}}
+{"t": 9, "type": "node", "id": "use1-nodepool", "message": "Worker pool scales up", "metrics": {"instances": 10}}
 {"t": 14, "type": "node", "id": "pricing", "state": "degraded", "message": "Cache miss storm on sale prices", "metrics": {"cpu": 0.91}}
 {"t": 16, "type": "edge", "id": "cart->pricing", "state": "slow", "latencyMs": 740, "message": "p99 740 ms"}
 {"t": 20, "type": "edge", "id": "payments->stripe", "state": "slow", "latencyMs": 1900, "message": "Stripe p99 1.9 s"}
 {"t": 22, "type": "edge", "id": "checkout->payments", "state": "slow", "latencyMs": 2300, "message": "Threads waiting on payments"}
 {"t": 25, "type": "node", "id": "checkout", "state": "fire", "message": "Thread pool exhausted, error rate 31%", "metrics": {"cpu": 0.99, "errors": 0.31}}
 {"t": 26, "type": "edge", "id": "bff->checkout", "state": "broken", "message": "503 from checkout"}
-{"t": 27, "type": "node", "id": "web", "state": "ok", "message": "Scaled to 30 pods", "metrics": {"cpu": 0.55}}
+{"t": 27, "type": "node", "id": "web", "state": "ok", "message": "Scaled to 30 pods", "metrics": {"cpu": 0.55, "replicas": 30}}
 {"t": 30, "type": "node", "id": "kafka", "state": "degraded", "message": "Consumer lag 2.4 M events"}
 {"t": 31, "type": "edge", "id": "kafka->search", "state": "slow", "latencyMs": 45000, "message": "Index 45 s behind"}
 {"t": 33, "type": "node", "id": "search", "state": "degraded", "message": "Serving stale stock levels"}
@@ -43,6 +44,8 @@
 {"t": 78, "type": "edge", "id": "checkout->payments", "rps": 110}
 {"t": 78, "type": "edge", "id": "payments->stripe", "rps": 110}
 {"t": 84, "type": "edge", "id": "shoppers->cdn", "rps": 4200, "message": "Back to normal"}
+{"t": 84, "type": "node", "id": "web", "message": "HPA returns to 12 pods", "metrics": {"replicas": 12}}
+{"t": 84, "type": "node", "id": "use1-nodepool", "message": "Worker pool returns to 6 instances", "metrics": {"instances": 6}}
 {"t": 84, "type": "edge", "id": "mobile->cdn", "rps": 1800}
 {"t": 85, "type": "edge", "id": "use1-ingress->web", "rps": 1700}
 {"t": 85, "type": "edge", "id": "use1-ingress->bff", "rps": 900}

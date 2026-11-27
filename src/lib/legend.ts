@@ -19,7 +19,7 @@ export const CATEGORY_LEGEND: LegendItem[] = (
 
 export const isLegendTerm = (term: string) => /^(state|category):/i.test(term);
 
-/** A click shows only this entry, or clears it when it already is; with `add` (Shift) it joins or leaves the others. */
+/** A click isolates an entry; with a modifier it joins or leaves the existing filters. */
 export function toggleFilter(terms: string[], term: string, add: boolean): string[] {
   const other = terms.filter((t) => !isLegendTerm(t));
   const active = terms.filter(isLegendTerm);

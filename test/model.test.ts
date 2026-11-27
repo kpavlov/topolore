@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseHcl } from "../src/lib/hcl.ts";
-import { applyUpdate, normalize } from "../src/lib/model.ts";
-import { lookOf, terraformKind } from "../src/lib/catalog.ts";
+import { applyUpdate, capacityLabel, normalize } from "../src/lib/model.ts";
+import { iconSvg, lookOf, terraformKind } from "../src/lib/catalog.ts";
 import { checkUpdate, defineTools } from "../src/lib/mcp.ts";
 
 const sample = (name: string) => readFileSync(new URL(`../public/samples/${name}`, import.meta.url), "utf8");
@@ -38,9 +38,30 @@ test("updates change state in place and report topology changes", () => {
   assert.ok(!infra.edges.some((e) => e.from === "checkout" || e.to === "checkout"));
 });
 
+test("capacity labels show replicas, instance type and autoscaling changes", () => {
+  const infra = parseHcl(sample("platform.hcl"));
+  const web = infra.nodes.find((n) => n.id === "web")!;
+  const pool = infra.nodes.find((n) => n.id === "use1-nodepool")!;
+  assert.equal(capacityLabel(web), "12 pods");
+  assert.equal(capacityLabel(pool), "6 instances · m6i.large · ASG shop-prod-workers · min 3 · max 12");
+  applyUpdate(infra, { type: "node", id: "web", metrics: { replicas: 30 } });
+  applyUpdate(infra, { type: "node", id: "use1-nodepool", metrics: { instances: 10 } });
+  assert.equal(capacityLabel(web), "30 pods");
+  assert.match(capacityLabel(pool), /^10 instances · m6i.large/);
+});
+
 test("bad files fail with a readable message", () => {
   assert.throws(() => normalize({ nodes: [{ id: "a" }], edges: [{ from: "a", to: "b" }] }), /"b", which is not a node/);
   assert.throws(() => parseHcl('node "a" { kind = "x" '), /./);
+});
+
+test("topology reference links survive ingestion and reject unsafe URLs", async () => {
+  const { ingest } = await import("../src/parsers/index.ts");
+  const links = [{ label: "Postmortem", url: "https://example.com/review" }];
+  const loaded = ingest([{ path: "incident.json", text: JSON.stringify({ title: "Incident", links, nodes: [{ id: "api" }] }) }]);
+  assert.deepEqual(loaded.infra.links, links);
+  assert.throws(() => normalize({ links: [{ label: "Bad", url: "javascript:alert(1)" }] }), /HTTP or HTTPS/);
+  assert.throws(() => normalize({ links: "https://example.com" }), /must be a list/);
 });
 
 test("kinds map to provider icons", () => {
@@ -49,6 +70,18 @@ test("kinds map to provider icons", () => {
   assert.equal(lookOf("gcp.run").icon, "google-cloud-run");
   assert.equal(lookOf("saas.stripe").icon, "stripe");
   assert.equal(lookOf("azure.cosmos").badge, "Cosmos");
+});
+
+test("external kinds have recognizable icons without overriding provider icons", () => {
+  for (const [kind, icon] of [["customers", "external-people"], ["user", "external-person"], ["client.mobile", "external-mobile"],
+    ["browser", "external-browser"], ["internet", "external-globe"], ["partner", "external-integration"]]) {
+    const look = lookOf(kind);
+    assert.equal(look.icon, icon);
+    assert.equal(look.category, "edge");
+    assert.equal(look.shape, kind === "customers" || kind === "client.mobile" ? "slab" : "sphere");
+    assert.match(iconSvg(icon)!, /<svg/);
+  }
+  assert.equal(lookOf("aws.rds").icon, "aws-rds");
 });
 
 test("infra text round-trips through a URL value", async () => {

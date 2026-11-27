@@ -37,6 +37,7 @@ function scrubber(hide: boolean) {
 function compact(infra: Infra): string {
   return JSON.stringify({
     title: infra.title,
+    links: infra.links,
     groups: infra.groups,
     nodes: infra.nodes.map(({ props, sourceFile, lineStart, lineEnd, state, ...n }) => ({ ...n, state: state === "ok" ? undefined : state })),
     edges: infra.edges.map(({ id, state, ...e }) => ({ ...e, id: id === edgeId(e.from, e.to) ? undefined : id, state: state === "ok" ? undefined : state })),

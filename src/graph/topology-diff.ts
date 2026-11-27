@@ -92,6 +92,7 @@ export function diffTopology(base: Infra, target: Infra): TopologyDiff {
   const ids = new Set(all.map((n) => n.id));
   const infra = normalize({
     title: target.title,
+    links: target.links,
     groups,
     nodes: all,
     edges: [...target.edges, ...goneEdges.filter((e) => ids.has(e.from) && ids.has(e.to))],

@@ -1,4 +1,5 @@
-import { placementSpeed, type Infra, type NodeState, type EdgeState, type Update } from "./model.ts";
+import { applyUpdate, placementSpeed, type Infra, type NodeState, type EdgeState, type Update } from "./model.ts";
+import { lookOf } from "./catalog.ts";
 
 export type Status = { state: "idle" | "connecting" | "live" | "closed" | "error"; detail?: string };
 
@@ -46,17 +47,66 @@ export function connect(url: string, onUpdate: (u: Update) => void, onStatus: (s
 /** One JSONL line: an update plus when it happens, `t` seconds from the start or an `at` timestamp. */
 export type Timed = Update & { t?: number; at?: string };
 
-/** Seconds from the start of each line, in file order; `at` counts from the first timestamp, a line without either follows the one before. */
-export function timeline(text: string): [number, Update][] {
+export function recording(text: string) {
   let first: number | undefined;
   let last = 0;
-  return text.split("\n").filter((l) => l.trim() && !l.trimStart().startsWith("//")).map((line) => {
-    const { t, at, ...update } = JSON.parse(line) as Timed;
-    const ms = at === undefined ? NaN : Date.parse(at);
-    if (!Number.isNaN(ms)) first ??= ms;
-    last = typeof t === "number" ? t : !Number.isNaN(ms) ? (ms - first!) / 1000 : last;
-    return [last, update as Update];
-  });
+  let timed = false;
+  const events: [number, Update][] = [];
+  for (const [index, line] of text.split("\n").entries()) {
+    if (!line.trim() || line.trimStart().startsWith("//")) continue;
+    try {
+      const { t, at, ...update } = JSON.parse(line) as Timed;
+      if (!update.type || !["node", "edge", "group", "remove", "snapshot"].includes(update.type)) throw new Error("unknown update type");
+      if (at !== undefined && t !== undefined) throw new Error("use either at or t");
+      if (at !== undefined) {
+        if (typeof at !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)?$/i.test(at)) throw new Error("invalid ISO timestamp");
+        const ms = Date.parse(/(?:Z|[+-]\d\d:\d\d)$/i.test(at) ? at : `${at}Z`);
+        if (!Number.isFinite(ms)) throw new Error("invalid timestamp");
+        first ??= ms - last * 1000;
+        last = (ms - first) / 1000;
+        timed = true;
+      } else if (t !== undefined) {
+        if (typeof t !== "number" || !Number.isFinite(t) || t < 0) throw new Error("t must be a non-negative number");
+        last = t;
+        timed = true;
+      }
+      if (last < 0 || (events.length && last < events[events.length - 1][0])) throw new Error("timestamps must be in chronological order");
+      events.push([last, update as Update]);
+    } catch (e) {
+      throw new Error(`Line ${index + 1}: ${(e as Error).message}`);
+    }
+  }
+  if (!events.length) throw new Error("Recording contains no updates.");
+  return { events, start: first, duration: events.at(-1)![0], timed };
+}
+
+export function recordingState(base: Infra, events: [number, Update][], at: number, through = Infinity): Infra {
+  const next = structuredClone(base);
+  for (const [index, [time, update]] of events.entries()) {
+    if (time > at || index > through) break;
+    applyUpdate(next, update);
+  }
+  return next;
+}
+
+/** Play at the selected maximum speed, spacing nearby events so each remains visible. */
+export function advanceRecording(events: [number, Update][], position: number, index: number, wait: number, elapsed: number, speed: number) {
+  const remaining = Math.max(0, elapsed - wait);
+  wait = Math.max(0, wait - elapsed);
+  if (wait > 0) return { position, index, wait };
+  const next = events[index + 1];
+  const target = position + remaining * speed;
+  if (!next || target < next[0]) return { position: target, index, wait };
+  index++;
+  position = next[0];
+  const after = events[index + 1];
+  if (after) wait = Math.max(0, 0.8 - (after[0] - position) / speed);
+  return { position, index, wait };
+}
+
+/** Seconds from the start of each line, in file order; `at` counts from the first timestamp, a line without either follows the one before. */
+export function timeline(text: string): [number, Update][] {
+  return recording(text).events;
 }
 
 /** Plays a JSONL recording at its own pace, then starts over after `pause` seconds. Returns a function that stops it. */
@@ -113,7 +163,7 @@ export function simulate(getInfra: () => Infra, onUpdate: (u: Update) => void, s
     }
     if (tick % 3 !== 0 || open.size >= 3) return;
 
-    const healthyNodes = infra.nodes.filter((n) => (n.state ?? "ok") === "ok" && !n.kind.startsWith("internet"));
+    const healthyNodes = infra.nodes.filter((n) => (n.state ?? "ok") === "ok" && lookOf(n.kind).category !== "edge");
     const healthyEdges = infra.edges.filter((e) => (e.state ?? "ok") === "ok");
     const roll = Math.random();
     if (roll < 0.25 && healthyNodes.length) {
