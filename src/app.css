@@ -36,8 +36,8 @@ html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); overflow: hidden; }
 #app { height: 100dvh; }
 
-/* Labels drawn by CSS2DRenderer over the canvas. */
-.labels { position: absolute; inset: 0; pointer-events: none; }
+/* Labels drawn by CSS2DRenderer over the canvas. It gives each one z-index 1…N; z-index: 0 here keeps them under the panels. */
+.labels { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .node-label { font: 500 11px/1.2 var(--sans); color: var(--ink); text-align: center; white-space: nowrap;
   text-shadow: 0 0 3px var(--scene), 0 0 3px var(--scene), 0 0 6px var(--scene); transition: opacity 0.2s; }
 .node-label small { display: block; font: 600 10px var(--mono); }

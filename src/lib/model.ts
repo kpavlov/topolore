@@ -94,9 +94,18 @@ export function normalize(raw: unknown): Infra {
   const ids = new Set([...groups.map((g) => g.id), ...nodes.map((n) => n.id)]);
   if (ids.size !== groups.length + nodes.length) throw new Error("Every node and group needs its own id.");
   for (const item of [...groups, ...nodes]) {
+    for (const key of ["id", "label", "kind", "parent"] as const)
+      if (item[key] != null && typeof item[key] !== "string") throw new Error(`"${key}" of "${item.id}" must be text.`);
     if (!item.id) throw new Error(`A ${"kind" in item ? "node" : "group"} has no id.`);
     if (item.parent && !groups.some((g) => g.id === item.parent))
       throw new Error(`"${item.id}" sits in "${item.parent}", which is not a group.`);
+  }
+  for (const g of groups) {
+    const seen = new Set<string>();
+    for (let id: string | undefined = g.id; id; id = groups.find((x) => x.id === id)?.parent) {
+      if (seen.has(id)) throw new Error(`Group "${id}" sits inside itself.`);
+      seen.add(id);
+    }
   }
   const edges = (data.edges ?? []).map((e) => {
     for (const end of [e.from, e.to])
