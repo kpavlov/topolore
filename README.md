@@ -65,6 +65,33 @@ python3 -c "import sys,zlib,base64;print(base64.urlsafe_b64encode(zlib.compress(
 Colours follow the category of each node: compute blue, data purple, network teal, messaging pink, security indigo,
 SaaS lime. Pipes run cyan to indigo as traffic grows; amber is slow, red is broken.
 
+## Agents (WebMCP)
+
+The page offers its tools to agents through [WebMCP](https://webmachinelearning.github.io/webmcp/)
+(`document.modelContext`):
+
+| Tool | Does |
+|---|---|
+| `get_topology` | Reads the infrastructure, states, selection, view, simulation, last error and recent events |
+| `apply_updates` | Sends events in the [update stream](#update-stream) format and reports each rejected one |
+| `load_infra` | Loads JSON, HCL or Terraform text |
+| `set_view` | Sets highlight, selection and camera |
+| `set_simulation` | Starts or stops the simulation; it starts by itself with a sample, so turn it off before testing |
+
+With `?readonly`, only `get_topology` and `set_view` are offered. The public site and builds work with a browser's
+built-in WebMCP only.
+
+For local agents such as Claude Code, `pnpm dev` also loads a WebMCP runtime and
+[relay](https://www.npmjs.com/package/@mcp-b/webmcp-local-relay) script from jsDelivr. The relay runs on your machine:
+
+1. Start `make dev` and open exactly `http://localhost:5173`; `127.0.0.1` or another port is refused.
+2. Start the relay: restart Claude Code in this repository and approve the `topolore` server from `.mcp.json`. To look
+   around by hand, run `make inspector` instead, press **Connect**, then **List Tools**.
+3. No page tools, only `webmcp_*`? Reload the tab. A page that found no relay checks again only now and then.
+
+While `pnpm dev` runs, those third-party scripts share the page with anything loaded from `private/`, and a connected
+agent can read it.
+
 ## GitHub Pages
 
 `.github/workflows/pages.yml` tests, builds and deploys `dist/` on every push to `main`, or when run by hand. Turn it on

@@ -7,6 +7,7 @@
   import { connect, replay, simulate, type Status } from "./lib/stream.ts";
   import { iconDataUrl, lookOf } from "./lib/catalog.ts";
   import { decodeInfra, encodeInfra, infraParam } from "./lib/share.ts";
+  import { registerTools, type AppApi } from "./lib/mcp.ts";
 
   type Sample = { label: string; read: () => Promise<string>; events?: () => Promise<string> };
   const fetchText = (url: string) => fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${url}: ${r.status} ${r.statusText}`))));
@@ -220,7 +221,28 @@
     if (stream) {
       streamUrl = stream;
       stop = connect(stream, onUpdate, (s) => (status = s));
-    } else if (!src && !inline) loaded.then(toggleSimulation); // your own infra gets no sample events
+    }
+    const ready = !stream && !src && !inline ? loaded.then(toggleSimulation) : loaded; // your own infra gets no sample events
+
+    // Agent tools (WebMCP). Registered once the first load has settled, so it cannot overwrite what an agent loads.
+    const agent = new AbortController();
+    const api: AppApi = {
+      readonly,
+      state: () => ({ infra, selected, highlight: terms, view, simulating, status, error, log }),
+      apply: onUpdate,
+      load: async (text, format) => {
+        stopStream();
+        sample = "";
+        await load(text, `Agent.${format}`);
+        return error;
+      },
+      setHighlight: setTerms,
+      select: choose,
+      setView,
+      // Only toggles: turning off an idle simulation must not disconnect a real stream.
+      setSimulation: (on) => void (on !== simulating && toggleSimulation()),
+    };
+    ready.finally(() => registerTools(api, agent.signal));
 
     // A pasted link that differs only in the hash does not reload the page.
     const onHash = () => {
@@ -232,6 +254,7 @@
     const restyle = () => scene.restyle();
     media.addEventListener("change", restyle);
     return () => {
+      agent.abort();
       stopStream();
       media.removeEventListener("change", restyle);
       removeEventListener("hashchange", onHash);

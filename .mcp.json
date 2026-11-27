@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "topolore": {
+      "command": "npx",
+      "args": ["-y", "@mcp-b/webmcp-local-relay@6.2.0", "--widget-origin", "http://localhost:5173"]
+    }
+  }
+}

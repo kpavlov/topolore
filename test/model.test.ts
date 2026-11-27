@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { parseHcl } from "../src/lib/hcl.ts";
 import { applyUpdate, normalize } from "../src/lib/model.ts";
 import { lookOf, terraformKind } from "../src/lib/catalog.ts";
+import { checkUpdate, defineTools } from "../src/lib/mcp.ts";
 
 const sample = (name: string) => readFileSync(new URL(`../public/samples/${name}`, import.meta.url), "utf8");
 
@@ -103,4 +104,74 @@ test("highlight terms match ids, labels, kinds, groups and issues", async () => 
   infra.edges.find((e) => e.id === "checkout->payments")!.state = "broken";
   assert.deepEqual(ids("issues"), ["checkout", "orders", "payments"]);
   assert.deepEqual(ids(" , "), []);
+});
+
+test("agent updates that would do nothing or break the scene are rejected", () => {
+  const infra = normalize(JSON.parse(sample("multicloud.json")));
+  const rejected = [
+    null, "x", {}, { type: "nope" }, { type: "node" },
+    { type: "node", id: "nobody", state: "fire" },
+    { type: "node", id: "checkout", state: "burning" },
+    { type: "node", id: "checkout", parent: "payments" },
+    { type: "node", id: "gcp", kind: "gcp.run" },
+    { type: "edge", state: "slow" },
+    { type: "edge", from: "checkout", to: "nobody" },
+    { type: "edge", id: "checkout->payments", state: "down" },
+    { type: "group", id: "gcp", parent: "gcp" },
+    { type: "remove", id: "nobody" },
+    { type: "remove", id: "gcp" }, // still holds items
+    { type: "snapshot", nodes: [{ id: "a" }], edges: [{ from: "a", to: "b" }] },
+  ];
+  for (const u of rejected) assert.equal(typeof checkUpdate(infra, u), "string", JSON.stringify(u));
+  for (const u of [
+    { type: "node", id: "checkout", state: "fire" },
+    { type: "node", id: "cache", kind: "gcp.memorystore", parent: "gcp" },
+    { type: "edge", from: "checkout", to: "payments", state: "broken" },
+    { type: "remove", id: "checkout" },
+  ]) assert.equal(checkUpdate(infra, u), null, JSON.stringify(u));
+});
+
+test("agent tools report failures and respect readonly", async () => {
+  const infra = normalize(JSON.parse(sample("multicloud.json")));
+  const loads: string[] = [];
+  const app = {
+    readonly: false,
+    state: () => ({ infra, selected: null, highlight: [], view: "iso" as const, simulating: false, status: { state: "idle" as const }, error: "", log: [] }),
+    apply: (u: Parameters<typeof applyUpdate>[1]) => void applyUpdate(infra, u),
+    load: async (text: string) => (loads.push(text), "bad file"),
+    setHighlight() {}, select() {}, setView() {}, setSimulation() {},
+  };
+  const call = (name: string, args: Record<string, unknown>) => defineTools(app).find((t) => t.name === name)!.execute(args);
+
+  const batch = await call("apply_updates", { updates: [
+    { type: "node", id: "cache", kind: "gcp.memorystore", parent: "gcp" },
+    null,
+    { type: "edge", from: "checkout", to: "cache" },
+  ] });
+  assert.equal(batch.isError, true);
+  assert.deepEqual(JSON.parse(batch.content[0].text).map((r: { ok: boolean }) => r.ok), [true, false, true]);
+  assert.ok(infra.edges.some((e) => e.id === "checkout->cache"));
+
+  assert.equal((await call("load_infra", { text: "  ", format: "hcl" })).isError, true);
+  assert.equal((await call("load_infra", { text: "x", format: "yaml" })).isError, true);
+  assert.deepEqual(loads, []);
+  assert.equal((await call("load_infra", { text: "node", format: "hcl" })).isError, true);
+  assert.equal((await call("set_view", { select: "nobody" })).isError, true);
+
+  assert.deepEqual(defineTools(app).map((t) => t.name), ["get_topology", "apply_updates", "load_infra", "set_view", "set_simulation"]);
+  assert.deepEqual(defineTools({ ...app, readonly: true }).map((t) => t.name), ["get_topology", "set_view"]);
+});
+
+test("wrong types and group cycles are refused before they can break the app", () => {
+  const infra = normalize(JSON.parse(sample("multicloud.json")));
+  for (const u of [
+    { type: "node", id: "checkout", label: null },
+    { type: "node", id: "checkout", kind: null },
+    { type: "snapshot", nodes: [{ id: "a", label: 5 }], edges: [] },
+    { type: "snapshot", nodes: [{ id: 7 }], edges: [] },
+  ]) assert.equal(typeof checkUpdate(infra, u), "string", JSON.stringify(u));
+  assert.equal(checkUpdate(infra, { type: "node", id: "checkout", parent: null }), null, "null parent moves to the top level");
+  assert.throws(() => normalize({ nodes: [{ id: "a", label: 5 }] }), /"label" of "a" must be text/);
+  assert.throws(() => normalize({ nodes: [{ id: "a", kind: 5 }] }), /"kind" of "a" must be text/);
+  assert.throws(() => normalize({ groups: [{ id: "g", parent: "h" }, { id: "h", parent: "g" }] }), /inside itself/);
 });
