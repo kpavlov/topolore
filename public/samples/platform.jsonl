@@ -1,0 +1,52 @@
+// Flash sale at 12:00: traffic triples, the payment path backs up, checkout catches fire, events lag, then it all recovers.
+// One update per line, as a live stream sends it, plus `t`: seconds from the start (or `at`, an ISO timestamp).
+{"t": 0, "type": "edge", "id": "shoppers->cdn", "rps": 4200, "message": "Normal Friday traffic"}
+{"t": 3, "type": "edge", "id": "shoppers->cdn", "rps": 9800, "message": "Flash sale email lands"}
+{"t": 3, "type": "edge", "id": "mobile->cdn", "rps": 5200}
+{"t": 4, "type": "edge", "id": "use1-ingress->web", "rps": 4300}
+{"t": 4, "type": "edge", "id": "use1-ingress->bff", "rps": 2700}
+{"t": 5, "type": "edge", "id": "web->cart", "rps": 1500}
+{"t": 5, "type": "edge", "id": "bff->checkout", "rps": 240}
+{"t": 6, "type": "edge", "id": "checkout->payments", "rps": 380}
+{"t": 6, "type": "edge", "id": "payments->stripe", "rps": 380}
+{"t": 9, "type": "node", "id": "web", "state": "degraded", "message": "HPA scaling 12 → 30 pods", "metrics": {"cpu": 0.86}}
+{"t": 14, "type": "node", "id": "pricing", "state": "degraded", "message": "Cache miss storm on sale prices", "metrics": {"cpu": 0.91}}
+{"t": 16, "type": "edge", "id": "cart->pricing", "state": "slow", "latencyMs": 740, "message": "p99 740 ms"}
+{"t": 20, "type": "edge", "id": "payments->stripe", "state": "slow", "latencyMs": 1900, "message": "Stripe p99 1.9 s"}
+{"t": 22, "type": "edge", "id": "checkout->payments", "state": "slow", "latencyMs": 2300, "message": "Threads waiting on payments"}
+{"t": 25, "type": "node", "id": "checkout", "state": "fire", "message": "Thread pool exhausted, error rate 31%", "metrics": {"cpu": 0.99, "errors": 0.31}}
+{"t": 26, "type": "edge", "id": "bff->checkout", "state": "broken", "message": "503 from checkout"}
+{"t": 27, "type": "node", "id": "web", "state": "ok", "message": "Scaled to 30 pods", "metrics": {"cpu": 0.55}}
+{"t": 30, "type": "node", "id": "kafka", "state": "degraded", "message": "Consumer lag 2.4 M events"}
+{"t": 31, "type": "edge", "id": "kafka->search", "state": "slow", "latencyMs": 45000, "message": "Index 45 s behind"}
+{"t": 33, "type": "node", "id": "search", "state": "degraded", "message": "Serving stale stock levels"}
+{"t": 36, "type": "edge", "id": "euw1-cart->carts", "state": "broken", "message": "DynamoDB throttling (ProvisionedThroughputExceeded)"}
+{"t": 38, "type": "node", "id": "euw1-cart", "state": "down", "message": "0/4 pods ready"}
+{"t": 42, "type": "node", "id": "checkout", "state": "degraded", "message": "Circuit breaker open to payments, queueing orders"}
+{"t": 43, "type": "edge", "id": "bff->checkout", "state": "ok", "message": "Recovered"}
+{"t": 46, "type": "edge", "id": "euw1-cart->carts", "state": "ok", "message": "On-demand capacity switched on"}
+{"t": 48, "type": "node", "id": "euw1-cart", "state": "ok", "message": "4/4 pods ready"}
+{"t": 52, "type": "edge", "id": "payments->stripe", "state": "ok", "latencyMs": 420, "message": "Stripe recovered"}
+{"t": 54, "type": "edge", "id": "checkout->payments", "state": "ok", "latencyMs": 60, "message": "Recovered"}
+{"t": 56, "type": "node", "id": "checkout", "state": "ok", "message": "Queue drained, 0 failed orders", "metrics": {"cpu": 0.48, "errors": 0}}
+{"t": 60, "type": "node", "id": "pricing", "state": "ok", "message": "Sale prices warmed", "metrics": {"cpu": 0.4}}
+{"t": 60, "type": "edge", "id": "cart->pricing", "state": "ok", "latencyMs": 25, "message": "Recovered"}
+{"t": 64, "type": "edge", "id": "kafka->search", "state": "ok", "latencyMs": 900, "message": "Index caught up"}
+{"t": 65, "type": "node", "id": "kafka", "state": "ok", "message": "Lag cleared"}
+{"t": 66, "type": "node", "id": "search", "state": "ok", "message": "Fresh again"}
+{"t": 72, "type": "edge", "id": "shoppers->cdn", "rps": 6100, "message": "Sale winding down"}
+{"t": 72, "type": "edge", "id": "mobile->cdn", "rps": 2600}
+{"t": 74, "type": "edge", "id": "use1-ingress->web", "rps": 2300}
+{"t": 74, "type": "edge", "id": "use1-ingress->bff", "rps": 1200}
+{"t": 76, "type": "edge", "id": "web->cart", "rps": 520}
+{"t": 76, "type": "edge", "id": "bff->checkout", "rps": 80}
+{"t": 78, "type": "edge", "id": "checkout->payments", "rps": 110}
+{"t": 78, "type": "edge", "id": "payments->stripe", "rps": 110}
+{"t": 84, "type": "edge", "id": "shoppers->cdn", "rps": 4200, "message": "Back to normal"}
+{"t": 84, "type": "edge", "id": "mobile->cdn", "rps": 1800}
+{"t": 85, "type": "edge", "id": "use1-ingress->web", "rps": 1700}
+{"t": 85, "type": "edge", "id": "use1-ingress->bff", "rps": 900}
+{"t": 86, "type": "edge", "id": "web->cart", "rps": 400}
+{"t": 86, "type": "edge", "id": "bff->checkout", "rps": 60}
+{"t": 87, "type": "edge", "id": "checkout->payments", "rps": 90}
+{"t": 87, "type": "edge", "id": "payments->stripe", "rps": 90}

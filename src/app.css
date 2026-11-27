@@ -1,0 +1,59 @@
+:root {
+  color-scheme: light;
+  --bg: #f1f5f9; --scene: #eef2f7; --panel: rgba(255, 255, 255, 0.94); --ink: #0f172a; --muted: #475569;
+  --line: #cbd5e1; --accent: #2563eb; --flow: #06b6d4; --flow-heavy: #4f46e5;
+  --ok: #16a34a; --warn: #f59e0b; --crit: #dc2626; --fire: #f97316; --idle: #94a3b8;
+  --cat-compute: #3b82f6; --cat-data: #a855f7; --cat-network: #14b8a6; --cat-messaging: #ec4899;
+  --cat-security: #6366f1; --cat-external: #84cc16; --cat-edge: #f8fafc;
+  --plate-0: #ffffff; --plate-1: #e0f2fe; --plate-2: #dbeafe; --plate-3: #e0e7ff;
+  --shadow: 0 6px 24px rgba(15, 23, 42, 0.12);
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b1120; --scene: #0f172a; --panel: rgba(15, 23, 42, 0.92); --ink: #f1f5f9; --muted: #94a3b8;
+    --line: #334155; --accent: #60a5fa; --flow: #22d3ee; --flow-heavy: #818cf8;
+    --ok: #4ade80; --warn: #fbbf24; --crit: #f87171; --fire: #fb923c; --idle: #64748b;
+    --cat-compute: #3b82f6; --cat-data: #a855f7; --cat-network: #14b8a6; --cat-messaging: #ec4899;
+    --cat-security: #6366f1; --cat-external: #84cc16; --cat-edge: #e2e8f0;
+    --plate-0: #1e293b; --plate-1: #1e2a4a; --plate-2: #232f57; --plate-3: #2a3563;
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1120; --scene: #0f172a; --panel: rgba(15, 23, 42, 0.92); --ink: #f1f5f9; --muted: #94a3b8;
+  --line: #334155; --accent: #60a5fa; --flow: #22d3ee; --flow-heavy: #818cf8;
+  --ok: #4ade80; --warn: #fbbf24; --crit: #f87171; --fire: #fb923c; --idle: #64748b;
+  --cat-compute: #3b82f6; --cat-data: #a855f7; --cat-network: #14b8a6; --cat-messaging: #ec4899;
+  --cat-security: #6366f1; --cat-external: #84cc16; --cat-edge: #e2e8f0;
+  --plate-0: #1e293b; --plate-1: #1e2a4a; --plate-2: #232f57; --plate-3: #2a3563;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); overflow: hidden; }
+#app { height: 100dvh; }
+
+/* Labels drawn by CSS2DRenderer over the canvas. */
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.node-label { font: 500 11px/1.2 var(--sans); color: var(--ink); text-align: center; white-space: nowrap;
+  text-shadow: 0 0 3px var(--scene), 0 0 3px var(--scene), 0 0 6px var(--scene); transition: opacity 0.2s; }
+.node-label small { display: block; font: 600 10px var(--mono); }
+.node-label[data-state="fire"] small { color: var(--fire); }
+.node-label[data-state="down"] small { color: var(--crit); }
+.node-label[data-state="degraded"] small { color: var(--warn); }
+.node-label.dim { opacity: 0.3; }
+.node-label.selected b { color: var(--accent); }
+.group-label { display: flex; gap: 6px; align-items: center; font: 600 11px var(--mono); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.group-label img { width: 16px; height: 16px; }
+.edge-marker { font: 600 10px var(--mono); padding: 1px 6px; border-radius: 99px; color: #fff; }
+.edge-marker[data-state="broken"] { background: var(--crit); font-size: 12px; }
+.edge-marker[data-state="slow"] { background: var(--warn); }
+.labels.far .node-label small, .labels.far .group-label span { display: none; }
+.labels.far .node-label { font-size: 9px; }
+.labels.tiny .node-label:not([data-state="down"]):not([data-state="fire"]):not(.selected):not(.highlighted) { display: none; }
+.labels.tiny .group-label { font-size: 9px; }
+.node-label.highlighted b { color: var(--scene); background: var(--accent); padding: 1px 6px; border-radius: 99px; text-shadow: none; }

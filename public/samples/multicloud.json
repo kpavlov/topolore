@@ -1,0 +1,43 @@
+{
+  "title": "Multi-cloud shop",
+  "groups": [
+    { "id": "edge", "label": "Cloudflare", "kind": "cloudflare" },
+    { "id": "gcp", "label": "GCP europe-west4", "kind": "gcp" },
+    { "id": "azure", "label": "Azure West Europe", "kind": "azure" },
+    { "id": "aks", "label": "AKS cluster", "kind": "azure.aks", "parent": "azure" },
+    { "id": "aws", "label": "AWS us-east-1", "kind": "aws" }
+  ],
+  "nodes": [
+    { "id": "shoppers", "label": "Shoppers", "kind": "internet" },
+    { "id": "cdn", "label": "CDN + WAF", "kind": "cloudflare.cdn", "parent": "edge" },
+    { "id": "worker", "label": "edge router", "kind": "cloudflare.workers", "parent": "edge" },
+    { "id": "storefront", "label": "storefront", "kind": "gcp.run", "parent": "gcp", "metrics": { "instances": 6 } },
+    { "id": "checkout", "label": "checkout", "kind": "gcp.run", "parent": "gcp" },
+    { "id": "orders-topic", "label": "orders", "kind": "gcp.pubsub", "parent": "gcp" },
+    { "id": "catalog-db", "label": "catalog", "kind": "gcp.sql", "parent": "gcp", "props": { "tier": "db-custom-4-16384" } },
+    { "id": "search", "label": "search", "kind": "db.elasticsearch", "parent": "gcp" },
+    { "id": "fulfilment", "label": "fulfilment", "kind": "k8s.deployment", "parent": "aks" },
+    { "id": "inventory", "label": "inventory", "kind": "k8s.statefulset", "parent": "aks" },
+    { "id": "cosmos", "label": "inventory store", "kind": "azure.cosmos", "parent": "azure" },
+    { "id": "bus", "label": "shipping events", "kind": "azure.servicebus", "parent": "azure" },
+    { "id": "media", "label": "product media", "kind": "aws.s3", "parent": "aws" },
+    { "id": "mail", "label": "order mail", "kind": "aws.ses", "parent": "aws" },
+    { "id": "payments", "label": "Stripe", "kind": "saas.stripe" }
+  ],
+  "edges": [
+    { "from": "shoppers", "to": "cdn", "protocol": "https", "rps": 900 },
+    { "from": "cdn", "to": "worker", "rps": 600 },
+    { "from": "cdn", "to": "media", "label": "images", "rps": 300 },
+    { "from": "worker", "to": "storefront", "rps": 420 },
+    { "from": "worker", "to": "checkout", "rps": 60 },
+    { "from": "storefront", "to": "catalog-db", "protocol": "postgres", "rps": 500 },
+    { "from": "storefront", "to": "search", "rps": 200 },
+    { "from": "checkout", "to": "payments", "protocol": "https", "rps": 20 },
+    { "from": "checkout", "to": "orders-topic", "rps": 20 },
+    { "from": "orders-topic", "to": "fulfilment", "label": "push subscription", "rps": 20 },
+    { "from": "fulfilment", "to": "inventory", "rps": 40 },
+    { "from": "inventory", "to": "cosmos", "rps": 80 },
+    { "from": "fulfilment", "to": "bus", "rps": 15 },
+    { "from": "fulfilment", "to": "mail", "rps": 10 }
+  ]
+}
