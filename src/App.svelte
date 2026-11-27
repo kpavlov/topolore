@@ -881,7 +881,7 @@
   .tip span { color: var(--muted); font: 12px var(--mono); }
   .tip em { font-style: normal; font: 600 12px var(--mono); }
 
-  .log { right: max(16px, env(safe-area-inset-right)); top: 12px; width: min(360px, calc(100% - 32px)); padding: 8px 10px;
+  .log { right: max(16px, env(safe-area-inset-right)); top: 12px; width: min(480px, calc(100% - 32px)); padding: 8px 10px;
     font-size: 12px; display: grid; gap: 6px; }
   .log.expanded { height: min(300px, 45%); grid-template-rows: auto minmax(0, 1fr); }
   .log-entries { overflow-y: auto; display: grid; align-content: start; gap: 6px; }
@@ -905,7 +905,7 @@
 
   @media (max-width: 720px) {
     .legend .keys:not([role="group"]), .legend .hint { display: none; }
-    .log { width: min(360px, calc(100% - 180px)); }
+    .log { width: min(480px, calc(100% - 180px)); }
     .log-entry { grid-template-columns: 8px minmax(0, 1fr); }
     .log-entry time { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
     .inspecting .zoom { right: max(16px, env(safe-area-inset-right)); bottom: 46%; }

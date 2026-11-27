@@ -1,0 +1,41 @@
+// Twilio postmortem: https://www.twilio.com/en-us/blog/company/communications/billing-incident-post-mortem-breakdown-analysis-and-root-cause-html
+// Nodes, connections and the two displayed Redis replicas are schematic; Twilio reported multiple replicas, not their count.
+// Voice and SMS delivery were not impacted. Billing, account and payment states summarize the reported effects, not all customers.
+// The postmortem gives conflicting PDT and UTC times for the initial staged activation, so this replay uses the unambiguous later milestones.
+{"at":"2013-07-18T08:35:00Z","type":"node","id":"replica-a","state":"degraded","message":"After connectivity is lost, Redis replicas reconnect and request full synchronization; the displayed replicas are representative."}
+{"at":"2013-07-18T08:35:00Z","type":"node","id":"replica-b","state":"degraded","message":"After connectivity is lost, Redis replicas reconnect and request full synchronization; the displayed replicas are representative."}
+{"at":"2013-07-18T08:35:00Z","type":"edge","id":"replica-a->balance","state":"slow","message":"Schematic: simultaneous full synchronization places load on the primary."}
+{"at":"2013-07-18T08:35:00Z","type":"edge","id":"replica-b->balance","state":"slow","message":"Schematic: simultaneous full synchronization places load on the primary."}
+{"at":"2013-07-18T09:39:00Z","type":"node","id":"balance","state":"fire","message":"Primary load becomes extreme and dependent services begin to fail."}
+{"at":"2013-07-18T09:39:00Z","type":"node","id":"billing-service","state":"degraded","message":"Services relying on the Redis primary begin to fail."}
+{"at":"2013-07-18T09:42:00Z","type":"node","id":"balance","state":"degraded","message":"Engineers restart the primary; an incorrect configuration leads to lost in-flight balances and a read-only Redis instance."}
+{"at":"2013-07-18T09:42:00Z","type":"edge","id":"billing-service->balance","state":"broken","message":"Schematic: the billing system cannot update account balances."}
+{"at":"2013-07-18T10:28:00Z","type":"node","id":"monitoring","state":"degraded","message":"Monitoring detects billing anomalies; Twilio reports 1.1% of customers affected in this phase."}
+{"at":"2013-07-18T10:28:00Z","type":"node","id":"recharge","state":"degraded","message":"Some auto-recharge accounts experience repeated credit-card charges because balances cannot be updated."}
+{"at":"2013-07-18T10:28:00Z","type":"node","id":"account","state":"degraded","message":"Some accounts are suspended after cards are deactivated by repeated billing."}
+{"at":"2013-07-18T11:10:00Z","type":"node","id":"billing-service","state":"down","message":"Twilio takes billing offline to prevent further charges; SMS and voice delivery remain operational."}
+{"at":"2013-07-18T11:10:00Z","type":"node","id":"reports","state":"degraded","message":"Usage reports do not yet reflect prices for billable items while billing is offline."}
+{"at":"2013-07-18T11:10:00Z","type":"edge","id":"recharge->payment","state":"broken","message":"Schematic: billing is stopped to prevent further charges; this does not represent a payment-processor outage."}
+{"at":"2013-07-18T13:24:00Z","type":"node","id":"account","state":"ok","message":"Service has been restored to all suspended accounts; billing remains offline."}
+{"at":"2013-07-18T18:58:00Z","type":"node","id":"billing-service","state":"ok","message":"Billing is brought back online after balances are restored using the independent bookkeeping record."}
+{"at":"2013-07-18T18:58:00Z","type":"node","id":"ledger","state":"ok","message":"The independent relational ledger was used to restore lost in-flight balances; no exact completion time is reported."}
+{"at":"2013-07-18T18:58:00Z","type":"edge","id":"recharge->payment","state":"ok","message":"Schematic: billing has been brought back online."}
+{"at":"2013-07-18T19:36:00Z","type":"node","id":"monitoring","state":"degraded","message":"Monitoring detects a recurrence of billing anomalies; Twilio reports another 0.3% of customers affected."}
+{"at":"2013-07-18T19:36:00Z","type":"node","id":"billing-service","state":"down","message":"Billing is taken offline again and suspended accounts are immediately reactivated."}
+{"at":"2013-07-18T19:36:00Z","type":"edge","id":"recharge->payment","state":"broken","message":"Schematic: billing is stopped again; the payment processor is not depicted as down."}
+{"at":"2013-07-18T21:57:00Z","type":"node","id":"refund-work","message":"Refund processing begins and continues for approximately 24 hours.","label":"Refund processing · activity","kind":"generic","parent":"billing"}
+{"at":"2013-07-18T21:57:00Z","type":"edge","id":"billing-service->balance","state":"broken","message":"Schematic: the billing service remains offline during investigation and correction."}
+{"at":"2013-07-19T22:00:00Z","type":"node","id":"refund-work","state":"ok","message":"Twilio reports refunds for erroneous charges completed."}
+{"at":"2013-07-19T22:30:00Z","type":"node","id":"account","state":"ok","message":"Affected accounts have received the reported service credit."}
+{"at":"2013-07-20T03:14:00Z","type":"node","id":"billing-service","state":"ok","message":"Billing has been reactivated for all customers after a staged rollout."}
+{"at":"2013-07-20T03:14:00Z","type":"edge","id":"recharge->payment","state":"ok","message":"Schematic: billing is reactivated for all customers."}
+{"at":"2013-07-20T04:15:00Z","type":"node","id":"balance","state":"ok","message":"Twilio reports all systems restored by the all-clear; individual component recovery times are not specified."}
+{"at":"2013-07-20T04:15:00Z","type":"node","id":"replica-a","state":"ok","message":"Twilio reports all systems restored by the all-clear; individual component recovery times are not specified."}
+{"at":"2013-07-20T04:15:00Z","type":"node","id":"replica-b","state":"ok","message":"Twilio reports all systems restored by the all-clear; individual component recovery times are not specified."}
+{"at":"2013-07-20T04:15:00Z","type":"node","id":"recharge","state":"ok","message":"Twilio reports all systems restored by the all-clear; individual component recovery times are not specified."}
+{"at":"2013-07-20T04:15:00Z","type":"node","id":"monitoring","state":"ok","message":"Twilio reports all systems restored by the all-clear; individual component recovery times are not specified."}
+{"at":"2013-07-20T04:15:00Z","type":"node","id":"reports","state":"ok","message":"Twilio reports all systems restored by the all-clear; individual component recovery times are not specified."}
+{"at":"2013-07-20T04:15:00Z","type":"edge","id":"replica-a->balance","state":"ok","message":"Schematic: the billing system is restored by the all-clear."}
+{"at":"2013-07-20T04:15:00Z","type":"edge","id":"replica-b->balance","state":"ok","message":"Schematic: the billing system is restored by the all-clear."}
+{"at":"2013-07-20T04:15:00Z","type":"edge","id":"billing-service->balance","state":"ok","message":"Schematic: the billing system is restored by the all-clear."}
+{"at":"2013-07-20T04:15:00Z","type":"remove","id":"refund-work","message":"Schematic refund activity closes; Twilio reported refunds completed on July 19."}

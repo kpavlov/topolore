@@ -204,6 +204,15 @@ See `public/samples/platform.jsonl` and the illustrative Azure Front Door incide
 is simplified; the documented event times describe the real incident. The GitHub Actions runner sample follows the
 [May 2026 availability report](https://github.blog/news-insights/company-news/github-availability-report-may-2026/);
 its topology and recovery node are schematic, and do not represent individual machines or reported capacity counts.
+The Cloudflare PDX sample follows the [November 2023 postmortem](https://blog.cloudflare.com/post-mortem-on-cloudflare-control-plane-and-analytics-outage/).
+Its topology and per-product states are schematic; November 3 bootstrap markers use illustrative times because the
+postmortem does not give exact start times.
+The [AWS US-EAST-1 sample](https://aws.amazon.com/message/12721/) follows the December 2021 internal-network event,
+including its staggered service recovery. Its topology is schematic; individual onset or recovery times are not implied
+when AWS did not report them.
+The [Twilio billing sample](https://www.twilio.com/en-us/blog/company/communications/billing-incident-post-mortem-breakdown-analysis-and-root-cause-html)
+replays the July 2013 billing incident. Its replica count and topology are schematic; SMS and voice delivery remained
+operational during the incident.
 
 ## License
 

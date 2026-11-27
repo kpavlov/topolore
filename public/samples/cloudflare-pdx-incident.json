@@ -1,0 +1,286 @@
+{
+  "title": "Cloudflare control plane outage · 2–4 Nov 2023 (schematic)",
+  "links": [
+    {
+      "label": "Cloudflare postmortem",
+      "url": "https://blog.cloudflare.com/post-mortem-on-cloudflare-control-plane-and-analytics-outage/"
+    }
+  ],
+  "groups": [
+    {
+      "id": "edge",
+      "label": "Global network · remained operational",
+      "kind": "cloudflare"
+    },
+    {
+      "id": "oregon",
+      "label": "Oregon core · schematic",
+      "kind": "cloudflare"
+    },
+    {
+      "id": "pdx04",
+      "label": "PDX-04 · power failure",
+      "kind": "cloudflare",
+      "parent": "oregon"
+    },
+    {
+      "id": "ha",
+      "label": "Other two Oregon facilities · HA",
+      "kind": "cloudflare",
+      "parent": "oregon"
+    },
+    {
+      "id": "products",
+      "label": "Affected control plane and analytics",
+      "kind": "cloudflare"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "visitors",
+      "label": "Website visitors",
+      "kind": "customers"
+    },
+    {
+      "id": "customers",
+      "label": "Cloudflare customers",
+      "kind": "customers"
+    },
+    {
+      "id": "edge-network",
+      "label": "Global network / security",
+      "kind": "cloudflare",
+      "parent": "edge"
+    },
+    {
+      "id": "origin",
+      "label": "Customer origins",
+      "kind": "external"
+    },
+    {
+      "id": "utility",
+      "label": "Facility utility feeds",
+      "kind": "generic",
+      "parent": "pdx04"
+    },
+    {
+      "id": "generators",
+      "label": "Backup generators",
+      "kind": "generic",
+      "parent": "pdx04"
+    },
+    {
+      "id": "ups",
+      "label": "UPS batteries",
+      "kind": "generic",
+      "parent": "pdx04"
+    },
+    {
+      "id": "router-1",
+      "label": "PDX-04 router 1",
+      "kind": "generic",
+      "parent": "pdx04"
+    },
+    {
+      "id": "router-2",
+      "label": "PDX-04 router 2",
+      "kind": "generic",
+      "parent": "pdx04"
+    },
+    {
+      "id": "kafka",
+      "label": "Log processing · Kafka",
+      "kind": "kafka",
+      "parent": "pdx04"
+    },
+    {
+      "id": "clickhouse",
+      "label": "Analytics · ClickHouse",
+      "kind": "clickhouse",
+      "parent": "pdx04"
+    },
+    {
+      "id": "config",
+      "label": "Configuration management",
+      "kind": "generic",
+      "parent": "pdx04"
+    },
+    {
+      "id": "ha-one",
+      "label": "Oregon HA facility 1",
+      "kind": "compute",
+      "parent": "ha"
+    },
+    {
+      "id": "ha-two",
+      "label": "Oregon HA facility 2",
+      "kind": "compute",
+      "parent": "ha"
+    },
+    {
+      "id": "dashboard",
+      "label": "Dashboard changes",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "api",
+      "label": "API changes",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "control",
+      "label": "Affected control services",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "workers",
+      "label": "Workers configuration",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "access",
+      "label": "Zero Trust configuration",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "lb",
+      "label": "Load-balancer configuration",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "stream",
+      "label": "Stream uploads",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "analytics",
+      "label": "Analytics reporting",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "logs",
+      "label": "Raw log processing",
+      "kind": "cloudflare",
+      "parent": "products"
+    },
+    {
+      "id": "breakers",
+      "label": "Cloudflare circuit breakers",
+      "kind": "generic",
+      "parent": "pdx04"
+    }
+  ],
+  "edges": [
+    {
+      "from": "visitors",
+      "to": "edge-network",
+      "label": "Traffic served"
+    },
+    {
+      "from": "edge-network",
+      "to": "origin",
+      "label": "Traffic served"
+    },
+    {
+      "from": "customers",
+      "to": "dashboard"
+    },
+    {
+      "from": "customers",
+      "to": "api"
+    },
+    {
+      "from": "dashboard",
+      "to": "control"
+    },
+    {
+      "from": "api",
+      "to": "control"
+    },
+    {
+      "from": "control",
+      "to": "ha-one"
+    },
+    {
+      "from": "control",
+      "to": "ha-two"
+    },
+    {
+      "from": "control",
+      "to": "kafka",
+      "label": "Schematic dependency"
+    },
+    {
+      "from": "control",
+      "to": "clickhouse",
+      "label": "Schematic dependency"
+    },
+    {
+      "from": "workers",
+      "to": "control"
+    },
+    {
+      "from": "access",
+      "to": "control"
+    },
+    {
+      "from": "lb",
+      "to": "control"
+    },
+    {
+      "from": "stream",
+      "to": "control"
+    },
+    {
+      "from": "analytics",
+      "to": "clickhouse"
+    },
+    {
+      "from": "logs",
+      "to": "kafka"
+    },
+    {
+      "from": "utility",
+      "to": "ups",
+      "label": "Facility power"
+    },
+    {
+      "from": "generators",
+      "to": "ups",
+      "label": "Backup power"
+    },
+    {
+      "from": "ups",
+      "to": "router-1"
+    },
+    {
+      "from": "ups",
+      "to": "router-2"
+    },
+    {
+      "from": "ups",
+      "to": "kafka"
+    },
+    {
+      "from": "ups",
+      "to": "clickhouse"
+    },
+    {
+      "from": "ups",
+      "to": "config"
+    },
+    {
+      "from": "ups",
+      "to": "breakers",
+      "label": "Facility circuits (schematic)"
+    }
+  ]
+}

@@ -1,0 +1,326 @@
+{
+  "title": "AWS US-EAST-1 · 7 Dec 2021 (schematic)",
+  "links": [
+    {
+      "label": "AWS post-event review",
+      "url": "https://aws.amazon.com/message/12721/"
+    }
+  ],
+  "groups": [
+    {
+      "id": "aws",
+      "label": "AWS US-EAST-1 · schematic",
+      "kind": "aws"
+    },
+    {
+      "id": "main",
+      "label": "Main AWS network",
+      "kind": "aws",
+      "parent": "aws"
+    },
+    {
+      "id": "internal",
+      "label": "AWS internal network",
+      "kind": "aws",
+      "parent": "aws"
+    },
+    {
+      "id": "services",
+      "label": "Affected service capabilities",
+      "kind": "aws",
+      "parent": "main"
+    },
+    {
+      "id": "workloads",
+      "label": "Existing workloads · operational",
+      "kind": "aws",
+      "parent": "main"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "customers",
+      "label": "AWS customers",
+      "kind": "customers"
+    },
+    {
+      "id": "scale",
+      "label": "Automated scaling activity",
+      "kind": "aws.ec2",
+      "parent": "main"
+    },
+    {
+      "id": "network",
+      "label": "Internal ↔ main network devices",
+      "kind": "aws.vpc",
+      "parent": "aws"
+    },
+    {
+      "id": "clients",
+      "label": "Internal service clients",
+      "kind": "compute",
+      "parent": "internal"
+    },
+    {
+      "id": "dns",
+      "label": "Internal DNS",
+      "kind": "aws.route53",
+      "parent": "internal"
+    },
+    {
+      "id": "monitoring",
+      "label": "Internal monitoring",
+      "kind": "aws.cloudwatch",
+      "parent": "internal"
+    },
+    {
+      "id": "deploy",
+      "label": "Internal deployment systems",
+      "kind": "compute",
+      "parent": "internal"
+    },
+    {
+      "id": "ec2-control",
+      "label": "EC2 control plane",
+      "kind": "aws.ec2",
+      "parent": "internal"
+    },
+    {
+      "id": "console",
+      "label": "AWS Console sign-in",
+      "kind": "aws",
+      "parent": "services"
+    },
+    {
+      "id": "ec2-api",
+      "label": "EC2 API and launches",
+      "kind": "aws.ec2",
+      "parent": "services"
+    },
+    {
+      "id": "rds-api",
+      "label": "RDS provisioning",
+      "kind": "aws.rds",
+      "parent": "services"
+    },
+    {
+      "id": "elb-api",
+      "label": "ELB provisioning",
+      "kind": "aws.elb",
+      "parent": "services"
+    },
+    {
+      "id": "route53-api",
+      "label": "Route 53 changes",
+      "kind": "aws.route53",
+      "parent": "services"
+    },
+    {
+      "id": "sts",
+      "label": "STS · OIDC credentials",
+      "kind": "aws.iam",
+      "parent": "services"
+    },
+    {
+      "id": "cloudwatch",
+      "label": "CloudWatch monitoring",
+      "kind": "aws.cloudwatch",
+      "parent": "services"
+    },
+    {
+      "id": "vpce",
+      "label": "S3 / DynamoDB VPC endpoints",
+      "kind": "aws.vpc",
+      "parent": "services"
+    },
+    {
+      "id": "apigw",
+      "label": "API Gateway",
+      "kind": "aws.api-gateway",
+      "parent": "services"
+    },
+    {
+      "id": "eventbridge",
+      "label": "EventBridge delivery",
+      "kind": "aws.eventbridge",
+      "parent": "services"
+    },
+    {
+      "id": "ecs",
+      "label": "ECS / EKS APIs",
+      "kind": "aws.ecs",
+      "parent": "services"
+    },
+    {
+      "id": "fargate",
+      "label": "Fargate API",
+      "kind": "aws.ecs",
+      "parent": "services"
+    },
+    {
+      "id": "connect",
+      "label": "Amazon Connect",
+      "kind": "aws",
+      "parent": "services"
+    },
+    {
+      "id": "health",
+      "label": "Service Health Dashboard updates",
+      "kind": "aws",
+      "parent": "services"
+    },
+    {
+      "id": "running-ec2",
+      "label": "Running EC2 instances",
+      "kind": "aws.ec2",
+      "parent": "workloads"
+    },
+    {
+      "id": "running-containers",
+      "label": "Existing tasks / pods",
+      "kind": "aws.ecs",
+      "parent": "workloads"
+    },
+    {
+      "id": "lambda",
+      "label": "Lambda API / invocations",
+      "kind": "aws.lambda",
+      "parent": "workloads"
+    },
+    {
+      "id": "s3",
+      "label": "S3 direct access",
+      "kind": "aws.s3",
+      "parent": "workloads"
+    },
+    {
+      "id": "dynamo",
+      "label": "DynamoDB direct access",
+      "kind": "aws.dynamodb",
+      "parent": "workloads"
+    },
+    {
+      "id": "dns-answers",
+      "label": "Existing Route 53 DNS answers",
+      "kind": "aws.route53",
+      "parent": "workloads"
+    }
+  ],
+  "edges": [
+    {
+      "from": "customers",
+      "to": "console"
+    },
+    {
+      "from": "customers",
+      "to": "ec2-api"
+    },
+    {
+      "from": "customers",
+      "to": "apigw"
+    },
+    {
+      "from": "customers",
+      "to": "route53-api"
+    },
+    {
+      "from": "scale",
+      "to": "clients",
+      "label": "Scaling trigger (schematic)"
+    },
+    {
+      "from": "clients",
+      "to": "network",
+      "label": "Connection activity (schematic)"
+    },
+    {
+      "from": "network",
+      "to": "dns"
+    },
+    {
+      "from": "network",
+      "to": "monitoring"
+    },
+    {
+      "from": "network",
+      "to": "deploy"
+    },
+    {
+      "from": "network",
+      "to": "ec2-control"
+    },
+    {
+      "from": "ec2-api",
+      "to": "ec2-control"
+    },
+    {
+      "from": "rds-api",
+      "to": "ec2-api",
+      "label": "New resources"
+    },
+    {
+      "from": "elb-api",
+      "to": "ec2-api",
+      "label": "Registration (schematic)"
+    },
+    {
+      "from": "ecs",
+      "to": "ec2-api",
+      "label": "Task / pod launch"
+    },
+    {
+      "from": "fargate",
+      "to": "ec2-api",
+      "label": "Capacity provisioning"
+    },
+    {
+      "from": "apigw",
+      "to": "ec2-api",
+      "label": "Server replacement (schematic)"
+    },
+    {
+      "from": "connect",
+      "to": "apigw"
+    },
+    {
+      "from": "eventbridge",
+      "to": "network",
+      "label": "Delivery dependency (schematic)"
+    },
+    {
+      "from": "vpce",
+      "to": "network",
+      "label": "Endpoint dependency (schematic)"
+    },
+    {
+      "from": "cloudwatch",
+      "to": "network",
+      "label": "Monitoring dependency (schematic)"
+    },
+    {
+      "from": "customers",
+      "to": "running-ec2",
+      "label": "Existing workload"
+    },
+    {
+      "from": "customers",
+      "to": "lambda",
+      "label": "Existing invocation"
+    },
+    {
+      "from": "customers",
+      "to": "s3",
+      "label": "Direct access"
+    },
+    {
+      "from": "customers",
+      "to": "dynamo",
+      "label": "Direct access"
+    },
+    {
+      "from": "customers",
+      "to": "dns-answers",
+      "label": "Existing DNS answers"
+    }
+  ]
+}
