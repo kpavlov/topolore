@@ -16,6 +16,20 @@ export interface Layout {
   size: number;
 }
 
+type PlateBounds = Pick<Placed, "x" | "z" | "w" | "d">;
+
+/** Interpolate plate bounds with a smooth start and finish. */
+export function interpolatePlate(from: PlateBounds, to: PlateBounds, progress: number): PlateBounds {
+  const t = Math.max(0, Math.min(1, progress));
+  const eased = t * t * (3 - 2 * t);
+  return {
+    x: from.x + (to.x - from.x) * eased,
+    z: from.z + (to.z - from.z) * eased,
+    w: from.w + (to.w - from.w) * eased,
+    d: from.d + (to.d - from.d) * eased,
+  };
+}
+
 export const NODE = 40;
 const elk = new ELK();
 
@@ -28,7 +42,7 @@ export async function layout(infra: Infra): Promise<Layout> {
       children: [],
       layoutOptions: { "elk.padding": "[top=46,left=26,bottom=26,right=26]", "elk.nodeSize.minimum": "(120,80)" },
     });
-  for (const n of infra.nodes) elkNodes.set(n.id, { id: n.id, width: NODE + 32, height: NODE + 40 });
+  for (const n of infra.nodes) elkNodes.set(n.id, { id: n.id, width: NODE + 72, height: NODE + 80 });
 
   const root: ElkNode = {
     id: "__root",
@@ -38,8 +52,8 @@ export async function layout(infra: Infra): Promise<Layout> {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.spacing.nodeNode": "34",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+      "elk.spacing.nodeNode": "48",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "88",
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
       "elk.spacing.componentComponent": "60",
     },

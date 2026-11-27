@@ -18,31 +18,33 @@
   import { CATEGORY_LEGEND, isLegendTerm, STATE_LEGEND, toggleFilter } from "./lib/legend.ts";
   import { layout } from "./lib/layout.ts";
   import { applyUpdate, flowSpeed, highlighted, splitTerms, type Infra, type Update } from "./lib/model.ts";
-  import { connect, replay, simulate, type Status } from "./lib/stream.ts";
-  import { decodeInfra, infraParam } from "./lib/share.ts";
-  import { registerTools, type AppApi } from "./lib/mcp.ts";
+  import { advanceRecording, connect, recording, recordingState, simulate, type Status } from "./lib/stream.ts";
+  import { decodeInfra } from "./lib/share.ts";
+  import { route, sourceRoute, streamRoute } from "./lib/router.ts";
+  import { checkUpdate, registerTools, type AppApi } from "./lib/mcp.ts";
 
-  type Sample = { label: string; file: string; read: () => Promise<string>; events?: () => Promise<string> };
+  type Sample = { label: string; file: string; group: string; read: () => Promise<string>; events?: () => Promise<string> };
   const fetchText = (url: string) => fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${url}: ${r.status} ${r.statusText}`))));
-  // Samples are files on the site (public/samples), so links and streams can point at them too.
-  const SAMPLES: Record<string, Sample> = {
-    platform: { label: "Global retail platform (HCL)", file: "platform.hcl", read: () => fetchText("samples/platform.hcl"), events: () => fetchText("samples/platform.jsonl") },
-    multicloud: { label: "Multi-cloud shop (JSON)", file: "multicloud.json", read: () => fetchText("samples/multicloud.json") },
-    serverless: { label: "Serverless (Terraform)", file: "serverless.tf", read: () => fetchText("samples/serverless.tf") },
-  };
+  let samples = $state.raw<Record<string, Sample>>({});
   // private/ is gitignored and only `pnpm dev` lists it, never a build: real infrastructure stays local.
   // A `name.jsonl` beside `name.hcl` is that sample's events.
+  const privateSamples: Record<string, Sample> = {};
   if (import.meta.env.DEV) {
     const files = import.meta.glob<string>("../private/*.{hcl,json,tf,jsonl}", { query: "?raw", import: "default" });
     for (const [path, read] of Object.entries(files)) {
       const [, id, ext] = path.match(/([^/]+)\.(\w+)$/)!;
-      const entry = (SAMPLES[id] ??= { label: `${id} (local)`, file: `${id}.${ext}`, read: () => Promise.reject(new Error(`${id}: no infra file`)) });
+      const entry = (privateSamples[id] ??= { label: `${id} (local)`, group: "Local", file: `${id}.${ext}`, read: () => Promise.reject(new Error(`${id}: no infra file`)) });
       if (ext === "jsonl") entry.events = read;
       else (entry.read = read), (entry.file = `${id}.${ext}`);
     }
   }
-  const loadSample = (id: string) => SAMPLES[id].read().then((t) => load(t, SAMPLES[id].file), (e: Error) => void (error = e.message));
-
+  const sampleIndex = fetchText("samples/index.json").then((text) => {
+    const index = JSON.parse(text) as { id: string; label: string; group: string; file: string; events?: string }[];
+    samples = Object.fromEntries(index.map(({ id, label, group, file, events }) => [id, {
+      label, group, file, read: () => fetchText(`samples/${file}`), events: events ? () => fetchText(`samples/${events}`) : undefined,
+    }]));
+    samples = { ...samples, ...privateSamples };
+  }).catch((e: Error) => { error = `Samples: ${e.message}`; samples = privateSamples; });
   let host: HTMLDivElement;
   let scene: InfraScene;
   let infra = $state.raw<Infra>({ groups: [], nodes: [], edges: [] });
@@ -79,6 +81,11 @@
   let toast = $state("");
   let toastTimer: ReturnType<typeof setTimeout>;
   let exportMenu: HTMLDetailsElement;
+  let openMenu = $state<HTMLDetailsElement>();
+  let urlDialog: HTMLDialogElement;
+  let sourceUrl = $state("");
+  let routeVersion = 0;
+  let routeKey = "";
   const remembered = (key: string) => {
     try { return localStorage.getItem(key) !== "closed"; } catch { return true; }
   };
@@ -89,6 +96,12 @@
   };
   let stop: (() => void) | undefined;
   let relayout: ReturnType<typeof setTimeout> | undefined;
+  let playback = $state<{ data: ReturnType<typeof recording>; base: Infra; position: number; speed: number; playing: boolean; dynamic: boolean } | null>(null);
+  let replayTimer: ReturnType<typeof setInterval> | undefined;
+  let replayIndex = -1;
+  let replayWait = 0;
+  let slowing = $state(false);
+  let drawVersion = 0;
 
   const node = (id: string) => infra.nodes.find((n) => n.id === id);
   const edge = (id: string) => infra.edges.find((e) => e.id === id);
@@ -101,12 +114,15 @@
     toastTimer = setTimeout(() => (toast = ""), 3500);
   }
 
-  async function draw(next: Infra) {
+  async function draw(next: Infra, frame = true, animate = false) {
+    const version = ++drawVersion;
     infra = next;
     selected = null;
     blast = null;
     scene.select(null);
-    scene.build(infra, await layout(infra), true);
+    const placed = await layout(next);
+    if (version !== drawVersion) return;
+    scene.build(next, placed, frame, animate);
     tick++;
   }
 
@@ -145,12 +161,22 @@
     } catch (e) {
       return (error = (e as Error).message);
     }
+    ++routeVersion;
     stopStream();
     sample = "";
+    const scripts = files.filter((f) => /\.jsonl$/i.test(f.path));
+    if (scripts.length) {
+      if (scripts.length > 1) return (error = "Choose one JSONL recording at a time.");
+      const topology = files.filter((f) => !/\.jsonl$/i.test(f.path));
+      if (topology.length && await loadFiles(topology, "Files")) return error;
+      try { startRecording(scripts[0].text); } catch (e) { return (error = (e as Error).message); }
+      return "";
+    }
     return loadFiles(files, files.length === 1 ? files[0].path : "Files");
   }
 
   function applyEdit(files: SourceFile[]) {
+    ++routeVersion;
     stopStream();
     sample = "";
     return loadFiles(files, files.length === 1 ? "Edited text" : "Files");
@@ -163,6 +189,7 @@
     } catch (e) {
       return (e as Error).message;
     }
+    ++routeVersion;
     stopStream();
     error = "";
     sample = "";
@@ -190,16 +217,16 @@
     const topology = applyUpdate(infra, u);
     if (topology) {
       clearTimeout(relayout);
-      relayout = setTimeout(async () => scene.build(infra, await layout(infra)), 150);
-      note(u.type === "remove" ? `Removed ${u.id}` : `Topology changed (${u.type} ${"id" in u ? u.id ?? "" : ""})`);
+      relayout = setTimeout(async () => scene.build(infra, await layout(infra), false, true), 150);
+      note("message" in u && u.message ? u.message : u.type === "remove" ? `Removed ${u.id}` : `Topology changed (${u.type} ${"id" in u ? u.id ?? "" : ""})`);
     } else if (u.type === "node") {
       const n = node(u.id);
-      if (n) scene.updateNode(n);
-      if (n && u.state && u.state !== before) note(`${n.label}: ${u.state}${n.message ? ` — ${n.message}` : ""}`, u.state, [n.id]);
+      if (n) { scene.updateNode(n); scene.showNodeEvent(n.id); }
+      if (n && (u.message || (u.state && u.state !== before))) note(`${n.label}: ${u.state ?? n.state ?? "ok"}${u.message ? ` — ${u.message}` : ""}`, u.state ?? n.state, [n.id]);
     } else if (u.type === "edge") {
       const e = edge(u.id ?? `${u.from}->${u.to}`);
       if (e) scene.updateEdge(e);
-      if (e && u.state && u.state !== before) note(`${name(e.from)} → ${name(e.to)}: ${u.state}${e.message ? ` — ${e.message}` : ""}`, u.state, [e.from, e.to]);
+      if (e && (u.message || (u.state && u.state !== before))) note(`${name(e.from)} → ${name(e.to)}: ${u.state ?? e.state ?? "ok"}${u.message ? ` — ${u.message}` : ""}`, u.state ?? e.state, [e.from, e.to]);
     }
     tick++;
   }
@@ -209,6 +236,91 @@
     stop = undefined;
     simulating = false;
     status = { state: "idle" };
+    clearInterval(replayTimer);
+    playback = null;
+    replayIndex = -1;
+    replayWait = 0;
+    slowing = false;
+  }
+
+  function replayTime(seconds: number, start?: number) {
+    if (start !== undefined) return new Date(start + seconds * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+  }
+
+  function renderReplay(position: number, index: number) {
+    if (!playback) return;
+    const { data, base } = playback;
+    playback.position = Math.max(0, Math.min(data.duration, position));
+    if (index === replayIndex) return;
+    replayIndex = index;
+    clearTimeout(relayout);
+    log = data.events.slice(0, index + 1).flatMap(([at, update]) => {
+      if (!("message" in update) || !update.message) return [];
+      return [{ at: replayTime(at, data.start), text: update.message, tone: tone("state" in update ? update.state : undefined), ids: "id" in update && update.id ? [update.id] : [] }];
+    }).reverse().slice(0, 40);
+    void draw(recordingState($state.snapshot(base), $state.snapshot(data.events), playback.position, index), false, true);
+  }
+
+  function seek(position: number) {
+    if (!playback) return;
+    replayWait = 0;
+    slowing = false;
+    const target = Math.max(0, Math.min(playback.data.duration, position));
+    renderReplay(target, playback.data.events.findLastIndex(([at]) => at <= target));
+  }
+
+  function rewind() {
+    if (!playback) return;
+    replayWait = 0;
+    slowing = false;
+    replayIndex = -2;
+    renderReplay(0, -1);
+  }
+
+  function startRecording(text: string) {
+    const data = recording(text);
+    const validation = $state.snapshot(infra);
+    for (const [index, [, update]] of data.events.entries()) {
+      const problem = checkUpdate(validation, update);
+      if (problem) throw new Error(`Recording event ${index + 1}: ${problem}`);
+      applyUpdate(validation, update);
+    }
+    playback = { data, base: $state.snapshot(infra), position: 0, speed: data.start === undefined ? 1 : 600, playing: true, dynamic: true };
+    replayIndex = -2;
+    replayWait = 0;
+    slowing = false;
+    simulating = true;
+    status = { state: "live", detail: "replay" };
+    renderReplay(0, -1);
+    let last = performance.now();
+    replayTimer = setInterval(() => {
+      const now = performance.now();
+      if (playback?.playing) {
+        if (playback.dynamic) {
+          const next = advanceRecording(playback.data.events, playback.position, replayIndex, replayWait, (now - last) / 1000, playback.speed);
+          replayWait = next.wait;
+          slowing = next.wait > 0;
+          renderReplay(next.position, next.index);
+        } else seek(playback.position + (now - last) / 1000 * playback.speed);
+        if (replayIndex === playback.data.events.length - 1 && playback.position >= playback.data.duration) {
+          playback.playing = false;
+          slowing = false;
+        }
+      }
+      last = now;
+    }, 100);
+  }
+
+  function openStream(url: string) {
+    if (/\.jsonl(?:[?#]|$)/i.test(url)) {
+      let cancelled = false;
+      status = { state: "connecting" };
+      stop = () => { cancelled = true; };
+      fetchText(url).then((text) => { if (!cancelled) startRecording(text); }).catch((e: Error) => {
+        if (!cancelled) { error = e.message; status = { state: "error", detail: e.message }; }
+      });
+    } else stop = connect(url, onUpdate, (s) => { status = s; if (s.detail) note(s.detail); });
   }
 
   function toggleSimulation() {
@@ -216,23 +328,81 @@
     stopStream();
     simulating = true;
     // A sample with its own events replays them; anything else gets random incidents.
-    const events = SAMPLES[sample]?.events;
+    const events = samples[sample]?.events;
     status = { state: "live", detail: events ? "replay" : "simulated" };
     if (!events) return void (stop = simulate(() => infra, onUpdate));
-    let stopReplay = () => {};
     let stopped = false;
-    stop = () => ((stopped = true), stopReplay());
-    events().then((t) => void (stopped || (stopReplay = replay(t, onUpdate))), (e: Error) => void (error = e.message));
+    stop = () => { stopped = true; };
+    events().then((t) => { if (!stopped) startRecording(t); }).catch((e: Error) => { if (!stopped) { error = e.message; stopStream(); } });
   }
 
   function connectStream(e: SubmitEvent) {
     e.preventDefault();
+    ++routeVersion;
     stopStream();
-    if (!streamUrl.trim()) return;
-    stop = connect(streamUrl.trim(), onUpdate, (s) => {
-      status = s;
-      if (s.detail) note(s.detail);
-    });
+    const value = streamUrl.trim();
+    const url = streamRoute(new URL(location.href), value);
+    history.pushState(null, "", url);
+    routeKey = JSON.stringify(route(url));
+    if (value) openStream(value);
+  }
+
+  async function openRoute(force = false) {
+    const url = new URL(location.href);
+    const next = route(url);
+    const key = JSON.stringify(next);
+    if (!force && key === routeKey) return;
+    routeKey = key;
+    const version = ++routeVersion;
+    ++drawVersion;
+    clearTimeout(relayout);
+    stopStream();
+    streamUrl = next.stream ?? "";
+    sample = next.sample ?? "";
+    error = "";
+    try {
+      let text: string, file: string;
+      if (next.infra) {
+        text = await decodeInfra(next.infra);
+        file = "Link";
+      } else if (next.src) {
+        text = await fetchText(next.src);
+        file = new URL(next.src, location.href).pathname.split("/").pop() || "Source";
+      } else {
+        await sampleIndex;
+        if (version !== routeVersion) return;
+        const entry = samples[next.sample!];
+        if (!entry) throw new Error(`Sample "${next.sample}" was not found.`);
+        text = await entry.read();
+        file = entry.file;
+      }
+      if (version !== routeVersion) return;
+      const problem = await load(text, file);
+      if (version !== routeVersion || problem) return;
+      if (next.stream) openStream(next.stream);
+      else if (next.sample) toggleSimulation();
+    } catch (e) {
+      if (version === routeVersion) error = `Open: ${(e as Error).message}`;
+    }
+  }
+
+  function navigateSource(kind: "sample" | "src", value: string) {
+    const url = sourceRoute(new URL(location.href), kind, value);
+    history.pushState(null, "", url);
+    void openRoute(true);
+  }
+
+  function submitSource(e: SubmitEvent) {
+    e.preventDefault();
+    const value = sourceUrl.trim();
+    try {
+      if (!["http:", "https:"].includes(new URL(value, location.href).protocol) || !value) throw new Error();
+    } catch {
+      error = "Enter an HTTP or HTTPS topology URL.";
+      return;
+    }
+    urlDialog.close();
+    navigateSource("src", value);
   }
 
   const sharedInfra = () => comparing?.target ?? infra;
@@ -301,6 +471,7 @@
     if (modal) return; // Esc closes a dialog by itself
     if (e.key === "Escape") {
       exportMenu.open = false;
+      if (openMenu) openMenu.open = false;
       if (blast) blast = null;
       else choose(null);
     } else if (e.key.toLowerCase() === "b" && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).closest?.("input, textarea, select"))
@@ -319,20 +490,7 @@
     scene.setAutoRotate(rotation === 1 ? 1 : 0);
     scene.onSelect = (p) => (selected = p, p && (panel = true));
     scene.onHover = (pick, x, y) => (hover = pick ? { pick, x, y } : null);
-    const src = urlParam("src");
-    // `?stream=` (or `?events=`): a WebSocket, an SSE endpoint or a .jsonl recording.
-    const stream = urlParam("stream") ?? urlParam("events");
-    const inline = infraParam(new URL(location.href));
-    if (inline || src) sample = "";
-    const loaded =
-      inline ? decodeInfra(inline).then((t) => load(t, "Link"), () => void (error = "The infra in this link cannot be decoded.")) :
-      src ? fetchText(src).then((t) => load(t, new URL(src, location.href).pathname.split("/").pop() || src), (e: Error) => void (error = e.message)) :
-      loadSample(sample);
-    if (stream) {
-      streamUrl = stream;
-      stop = connect(stream, onUpdate, (s) => (status = s));
-    }
-    const ready: Promise<unknown> = !stream && !src && !inline ? loaded.then(toggleSimulation) : loaded; // your own infra gets no sample events
+    const ready = openRoute(true);
 
     // Agent tools (WebMCP). Registered once the first load has settled, so it cannot overwrite what an agent loads.
     const agent = new AbortController();
@@ -341,6 +499,7 @@
       state: () => ({ infra, selected, highlight: terms, view, simulating, status, error, log }),
       apply: onUpdate,
       load: (text, format) => {
+        ++routeVersion;
         stopStream();
         sample = "";
         return load(text, `agent.${format}`);
@@ -353,12 +512,9 @@
     };
     ready.finally(() => registerTools(api, agent.signal));
 
-    // A pasted link that differs only in the hash does not reload the page.
-    const onHash = () => {
-      const value = infraParam(new URL(location.href));
-      if (value) decodeInfra(value).then((t) => (stopStream(), (sample = ""), load(t, "Link")));
-    };
-    addEventListener("hashchange", onHash);
+    const onRoute = () => { void openRoute(); };
+    addEventListener("hashchange", onRoute);
+    addEventListener("popstate", onRoute);
     const media = matchMedia("(prefers-color-scheme: dark)");
     const restyle = () => scene.restyle();
     media.addEventListener("change", restyle);
@@ -366,7 +522,8 @@
       agent.abort();
       stopStream();
       media.removeEventListener("change", restyle);
-      removeEventListener("hashchange", onHash);
+      removeEventListener("hashchange", onRoute);
+      removeEventListener("popstate", onRoute);
       scene.dispose();
     };
   });
@@ -444,54 +601,81 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 7l9 5 9-5M12 12v10" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
       <h1>Topolore</h1>
       {#if infra.title}<span class="title">{infra.title}</span>{/if}
+      {#each infra.links ?? [] as link}
+        <a class="source-link" href={link.url} target="_blank" rel="noopener noreferrer">{link.label} ↗</a>
+      {/each}
     </div>
     <div class="tools">
       {#if readonly}<span class="badge" title="Opened with ?readonly">View only</span>{:else}
-      <select bind:value={sample} onchange={() => (stopStream(), loadSample(sample).then(toggleSimulation))} aria-label="Sample">
-        {#if !sample}<option value="">Your file</option>{/if}
-        {#each Object.entries(SAMPLES) as [id, { label }]}<option value={id}>{label}</option>{/each}
-      </select>
-      <button onclick={() => editDialog.open(sources, sharedInfra())}>Edit</button>
+      <details class="menu" bind:this={openMenu}>
+        <summary class="button">Open <span class="chevron" aria-hidden="true">▾</span></summary>
+        <div class="panel open-list">
+          <button onclick={() => { openMenu!.open = false; editDialog.open(sources, sharedInfra()); }}>Edit / paste</button>
+          <button onclick={() => { openMenu!.open = false; sourceUrl = ""; urlDialog.showModal(); }}>URL…</button>
+          <label class="button">Files<input type="file" multiple accept=".json,.jsonl,.hcl,.tf,.yaml,.yml" hidden onchange={(e) => { openMenu!.open = false; if (e.currentTarget.files?.length) openFiles(readPicked(e.currentTarget.files)).then(() => ((e.target as HTMLInputElement).value = "")); }} /></label>
+          <label class="button">Folder<input type="file" webkitdirectory multiple hidden onchange={(e) => { openMenu!.open = false; if (e.currentTarget.files?.length) openFiles(readPicked(e.currentTarget.files)).then(() => ((e.target as HTMLInputElement).value = "")); }} /></label>
+          <details class="sample-menu">
+            <summary>Samples <span class="chevron" aria-hidden="true">▾</span></summary>
+            {#each ["Examples", "Postmortems", "Local"] as group}
+              {#if Object.values(samples).some((entry) => entry.group === group)}
+                <span class="menu-heading">{group}</span>
+                {#each Object.entries(samples).filter(([, entry]) => entry.group === group) as [id, entry]}
+                  <button class:on={sample === id} onclick={() => { openMenu!.open = false; navigateSource("sample", id); }}>{entry.label}</button>
+                {/each}
+              {/if}
+            {/each}
+          </details>
+        </div>
+      </details>
       <button onclick={() => diffDialog.open(sources)} title="Compare before and after">Diff / Compare</button>
       {/if}
       <button onclick={() => palette.toggle()} aria-keyshortcuts="Meta+K Control+K">Search ⌘K</button>
       <button onclick={() => shareDialog.open(sharedInfra(), sources)} title="Make a link or a file that contains this infrastructure">Share URL</button>
       <details class="menu" bind:this={exportMenu}>
-        <summary class="button">Export ▾</summary>
+        <summary class="button">Export <span class="chevron" aria-hidden="true">▾</span></summary>
         <div class="panel">
           <button onclick={() => exportAs("png")}>PNG (2×)</button>
           <button onclick={() => exportAs("svg")}>SVG</button>
           <button onclick={() => exportAs("mermaid")}>Copy Mermaid diagram</button>
         </div>
       </details>
+      <details class="menu">
+        <summary class="button">Help <span class="chevron" aria-hidden="true">▾</span></summary>
+        <div class="panel"><a class="button" href="https://github.com/kpavlov/topolore/blob/main/public/docs/event-log.md" target="_blank" rel="noopener">Event log format ↗</a></div>
+      </details>
       {#if !readonly}
-      <label class="button">Open files<input type="file" multiple accept=".json,.hcl,.tf,.yaml,.yml" hidden onchange={(e) => e.currentTarget.files?.length && openFiles(readPicked(e.currentTarget.files)).then(() => ((e.target as HTMLInputElement).value = ""))} /></label>
       <form onsubmit={connectStream}>
         <input bind:value={streamUrl} placeholder="wss:// or https:// SSE stream" aria-label="Update stream URL" />
         <button disabled={!!comparing}>Connect</button>
       </form>
-      <button class:on={simulating} disabled={!!comparing} onclick={toggleSimulation} title="Play the sample's events, or random incidents and traffic drift">{simulating ? "Stop simulation" : "Simulate"}</button>
+      <button class:on={simulating} aria-pressed={simulating} disabled={!!comparing} onclick={toggleSimulation} title="Play the sample's events, or random incidents and traffic drift">Simulation</button>
       {/if}
       <button onclick={toggleTheme} title="Switch between light and dark" aria-label="Switch theme">◐</button>
+      <a class="button github" href="https://github.com/kpavlov/topolore" aria-label="Topolore on GitHub" title="Topolore on GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.87 10.91.58.11.79-.25.79-.55v-2.14c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.24 3.33.95.1-.74.4-1.24.72-1.53-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a11 11 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.73.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.13v3.16c0 .31.21.67.8.55A11.5 11.5 0 0 0 12 .5Z"/></svg>
+      </a>
       <span class="status" data-state={status.state}>{status.state === "live" && status.detail === "simulated" ? "simulating" : status.state}</span>
     </div>
   </header>
 
-  <main>
+  <main class:has-timeline={playback && playback.data.timed} class:inspecting={!!(panel && selected)}>
     <div class="stage" bind:this={host}></div>
 
     <div class="views panel" role="group" aria-label="Camera">
       {#each [["iso", "Iso"], ["3d", "3D"], ["top", "Top"]] as [id, label]}
         <button class:on={view === id} onclick={() => setView(id as View)}>{label}</button>
       {/each}
-      <button onclick={() => scene.zoomBy(1.25)} aria-label="Zoom in">+</button>
-      <button onclick={() => scene.zoomBy(0.8)} aria-label="Zoom out">−</button>
-      <button onclick={() => scene.setView(view)} title="Fit everything in view">Fit</button>
       <button class:on={rotation % 2 === 1} onclick={() => { rotation = (rotation + 1) % 4; scene.setAutoRotate(rotation === 1 ? 1 : rotation === 3 ? -1 : 0); }}
         title="Cycle counterclockwise, stop, clockwise, stop" aria-pressed={rotation % 2 === 1}>Rotate {rotation === 1 ? "↺" : rotation === 3 ? "↻" : ""}</button>
       <button class:on={filterOpen || terms.length > 0} onclick={() => (filterOpen = !filterOpen)} aria-expanded={filterOpen}>
         Highlight{terms.length ? ` · ${highlight?.size ?? 0}` : ""}
       </button>
+    </div>
+
+    <div class="zoom panel" role="group" aria-label="Zoom">
+      <button onclick={() => scene.zoomBy(1.25, true)} aria-label="Zoom in">+</button>
+      <button onclick={() => scene.zoomBy(0.8, true)} aria-label="Zoom out">−</button>
+      <button onclick={() => scene.fitView()} title="Fit everything in view">Fit</button>
     </div>
 
     {#if filterOpen}
@@ -535,14 +719,14 @@
           <div class="keys" role="group" aria-label="Filter">
             {#each group as item}
               <button class="pill" class:active={filtered(item.term)} aria-pressed={filtered(item.term)}
-                onclick={(e) => setTerms(toggleFilter(terms, item.term, e.shiftKey))}>
+                onclick={(e) => setTerms(toggleFilter(terms, item.term, e.shiftKey || e.ctrlKey || e.metaKey))}>
                 <i class="dot" style:background="var({item.color})"></i>{item.label}
               </button>
             {/each}
           </div>
         {/each}
         <div class="keys"><span><i class="ramp"></i>pipe: traffic light → heavy</span><span>flow speed: fast · medium · slow (latency, else placement)</span></div>
-        <div class="hint">Click a filter to isolate, Shift-click to combine · drag to rotate · right-drag to pan · scroll to zoom · drop files or folders</div>
+        <div class="hint">Click a filter to isolate, Shift/Ctrl/⌘-click to combine · drag to rotate · right-drag to pan · scroll to zoom · drop files or folders</div>
       {/if}
     </div>
 
@@ -576,15 +760,35 @@
       {log} {blast} open={panel} onchoose={choose} onblast={toggleBlast} />
 
     {#if log.length}
-      <section class="log panel" class:covered={panel && selected} aria-label="Events">
+      <section class="log panel" class:covered={panel && selected} class:expanded={eventsOpen} aria-label="Events">
         <button class="fold" onclick={() => keep("events", (eventsOpen = !eventsOpen))} aria-expanded={eventsOpen}>
           <span>{eventsOpen ? "▾" : "▸"} Events ({log.length})</span>
         </button>
         {#if eventsOpen}
-          {#each log.slice(0, 6) as entry}
-            <div title={entry.text}><time>{entry.at}</time><i class="dot {entry.tone}"></i>{entry.text}</div>
-          {/each}
+          <div class="log-entries">
+            {#each log.slice(0, 6) as entry}
+              <div class="log-entry"><time>{entry.at}</time><i class="dot {entry.tone}"></i><span>{entry.text}</span></div>
+            {/each}
+          </div>
         {/if}
+      </section>
+    {/if}
+
+    {#if playback && playback.data.timed}
+      <section class="timeline panel" aria-label="Incident playback">
+        <button onclick={rewind} aria-label="Rewind to start" title="Rewind to start">⏮</button>
+        <button onclick={() => { if (!playback!.playing && replayIndex === playback!.data.events.length - 1 && playback!.position >= playback!.data.duration) rewind(); playback!.playing = !playback!.playing; }}>
+          {playback.playing ? "Pause" : "Play"}
+        </button>
+        <time>{replayTime(playback.position, playback.data.start)}</time>
+        <input type="range" aria-label="Incident timeline" min="0" max={Math.max(playback.data.duration, 1)} step="0.1" value={playback.position} oninput={(e) => seek(Number(e.currentTarget.value))} />
+        <time>{replayTime(playback.data.duration, playback.data.start)}</time>
+        {#if slowing && playback.playing && playback.dynamic}<span class="pace" role="status">Slowing for events</span>{/if}
+        <label title="Playback speed"><svg class="speed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.3 18a9 9 0 1 1 15.4 0H4.3Z"/><path d="m12 14 4-4"/><circle cx="12" cy="14" r="1"/></svg><select value={playback.dynamic ? "dynamic" : String(playback.speed)} aria-label="Playback speed"
+          onchange={(e) => { const value = e.currentTarget.value; playback!.dynamic = value === "dynamic"; if (value !== "dynamic") playback!.speed = Number(value); }}>
+          <option value="dynamic">Dynamic (up to {playback.speed}×)</option>
+          {#each [1, 2, 5, 10, 60, 100, 600, 3600, 14400] as speed}<option value={String(speed)}>{speed}×</option>{/each}
+        </select></label>
       </section>
     {/if}
 
@@ -592,6 +796,14 @@
     <ShareDialog bind:this={shareDialog} camera={() => scene.camera3d()} />
     <EditDialog bind:this={editDialog} onapply={applyEdit} onpick={(list) => openFiles(readPicked(list))} />
     <DiffDialog bind:this={diffDialog} oncompare={compare} />
+    <dialog bind:this={urlDialog} aria-label="Open topology URL">
+      <form onsubmit={submitSource}>
+        <h2>Open topology URL</h2>
+        <p>The URL must allow access from this site.</p>
+        <input type="url" bind:value={sourceUrl} required placeholder="https://example.com/topology.json" aria-label="Topology URL" />
+        <div class="actions"><button type="button" onclick={() => urlDialog.close()}>Cancel</button><button class="on">Open</button></div>
+      </form>
+    </dialog>
 
     {#if dragging}<div class="drop">Drop files or a folder: Terraform, HCL, compose, Kubernetes, JSON or .topolore.json</div>{/if}
   </main>
@@ -599,30 +811,46 @@
 
 <style>
   .app { display: flex; flex-direction: column; height: 100%; }
-  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
-    padding: 8px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+  header { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between;
+    padding: 6px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
     border-bottom: 1px solid var(--line); background: var(--panel); z-index: 3; }
   .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .brand svg { width: 22px; height: 22px; color: var(--accent); flex: none; }
   h1 { font-size: 16px; margin: 0; font-weight: 600; }
   .title { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  form { display: flex; gap: 6px; }
+  .source-link { color: var(--accent); font-size: 12px; white-space: nowrap; }
+  .tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .tools > button, .tools > .button, .tools > form button, .menu summary { padding: 4px 7px; }
+  .tools input:not([type]) { width: 160px; padding: 4px 7px; }
+  .github { display: inline-flex; align-items: center; }
+  .github svg { width: 16px; height: 16px; }
+  form { display: flex; gap: 4px; }
   .status { font: 600 11px var(--mono); text-transform: uppercase; color: var(--muted); }
   .status[data-state="live"] { color: var(--ok); }
   .status[data-state="error"] { color: var(--crit); }
   .menu { position: relative; }
   .menu summary { list-style: none; }
   .menu summary::-webkit-details-marker { display: none; }
-  .menu div { top: calc(100% + 4px); right: 0; display: grid; gap: 4px; padding: 6px; width: max-content; }
-  .menu button { text-align: left; }
+  .chevron { font-size: 1.3em; line-height: 0; vertical-align: -0.05em; }
+  .menu > div { top: calc(100% + 4px); left: 0; display: grid; gap: 4px; padding: 6px; width: max-content; max-width: min(360px, 90vw); }
+  .menu:not(:has(.open-list)) > div { left: auto; right: 0; }
+  .menu > div button, .menu > div .button, .sample-menu summary { display: block; width: 100%; border: 0; border-radius: 4px;
+    background: transparent; color: var(--ink); padding: 5px 8px; text-align: left; text-decoration: none; cursor: pointer; }
+  .menu > div button:hover, .menu > div .button:hover, .sample-menu summary:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .menu > div button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--ink); }
+  .sample-menu { max-height: min(65vh, 500px); overflow: auto; }
+  .sample-menu button, .menu-heading { display: block; width: 100%; }
+  .sample-menu button { padding-left: 20px; }
+  .menu-heading { padding: 8px 8px 3px; color: var(--muted); font: 600 11px var(--mono); text-transform: uppercase; }
 
   main { position: relative; flex: 1; min-height: 0; }
   .stage { position: absolute; inset: 0; background: var(--scene); }
   .stage :global(canvas) { display: block; cursor: grab; touch-action: none; }
 
   .views { top: 12px; left: max(16px, env(safe-area-inset-left)); display: flex; gap: 4px; padding: 4px; }
-  .views button { border: none; min-width: 32px; }
+  .zoom { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; gap: 4px; padding: 4px; }
+  .views button, .zoom button { border: none; min-width: 32px; }
+  .inspecting .zoom { right: max(352px, calc(env(safe-area-inset-right) + 336px)); }
   .filter { top: 60px; left: max(16px, env(safe-area-inset-left)); width: min(320px, calc(100% - 32px));
     max-height: calc(100% - 200px); overflow: auto; padding: 12px; display: grid; gap: 8px; z-index: 2; }
   .filter input:not([type]) { width: 100%; }
@@ -653,11 +881,22 @@
   .tip span { color: var(--muted); font: 12px var(--mono); }
   .tip em { font-style: normal; font: 600 12px var(--mono); }
 
-  .log { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); max-width: 360px; padding: 8px 10px;
-    font-size: 12px; display: grid; gap: 3px; }
-  .log div { display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .log time { color: var(--muted); font: 11px var(--mono); margin-right: 8px; }
+  .log { right: max(16px, env(safe-area-inset-right)); top: 12px; width: min(360px, calc(100% - 32px)); padding: 8px 10px;
+    font-size: 12px; display: grid; gap: 6px; }
+  .log.expanded { height: min(300px, 45%); grid-template-rows: auto minmax(0, 1fr); }
+  .log-entries { overflow-y: auto; display: grid; align-content: start; gap: 6px; }
+  .log-entry { display: grid; grid-template-columns: auto 8px minmax(0, 1fr); align-items: start; gap: 6px; }
+  .log-entry time { color: var(--muted); font: 11px var(--mono); white-space: nowrap; }
+  .log-entry .dot { margin: 4px 0 0; }
+  .log-entry span { min-width: 0; overflow-wrap: anywhere; }
   .log.covered { display: none; }
+  .timeline { left: 16px; right: 16px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 8px; display: flex; align-items: center; gap: 8px; z-index: 3; }
+  .timeline input[type="range"] { flex: 1; min-width: 60px; }
+  .timeline time, .timeline label { font: 11px var(--mono); white-space: nowrap; }
+  .timeline label { display: flex; align-items: center; gap: 4px; }
+  .speed-icon { width: 18px; height: 18px; flex: none; }
+  .pace { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .has-timeline .legend, .has-timeline .zoom { bottom: 74px; }
 
   .error { top: 12px; left: 50%; transform: translateX(-50%); padding: 8px 12px; color: var(--crit); display: flex; gap: 10px; align-items: center; z-index: 4; max-width: calc(100% - 32px); }
   .error button { border: none; color: inherit; }
@@ -665,6 +904,14 @@
     font-size: 18px; background: color-mix(in srgb, var(--scene) 80%, transparent); z-index: 6; }
 
   @media (max-width: 720px) {
-    .legend .keys:not([role="group"]), .legend .hint, .log { display: none; }
+    .legend .keys:not([role="group"]), .legend .hint { display: none; }
+    .log { width: min(360px, calc(100% - 180px)); }
+    .log-entry { grid-template-columns: 8px minmax(0, 1fr); }
+    .log-entry time { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+    .inspecting .zoom { right: max(16px, env(safe-area-inset-right)); bottom: 46%; }
+    .timeline { flex-wrap: wrap; }
+    .timeline input[type="range"] { order: 5; flex-basis: 100%; }
+    .has-timeline .legend, .has-timeline .zoom { bottom: 110px; }
+    .has-timeline.inspecting .zoom { bottom: max(46%, 110px); }
   }
 </style>

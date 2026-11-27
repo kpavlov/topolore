@@ -5,8 +5,10 @@ import type { Mark, Overlay } from "../graph/overlay.ts";
 import type { Drawing, Point } from "../export/svg.ts";
 import { iconDataUrl, lookOf, type Look, type Shape } from "./catalog.ts";
 import type { Camera } from "./snapshot.ts";
-import type { Layout } from "./layout.ts";
-import { flowSpeed, type Edge, type Group, type Infra, type InfraNode } from "./model.ts";
+import { interpolatePlate, type Layout, type Placed } from "./layout.ts";
+import { capacityLabel, flowSpeed, type Edge, type Group, type Infra, type InfraNode } from "./model.ts";
+import { nodeEvents, type NodeEvent } from "../graph/node-events.ts";
+import { loadZoom, saveZoom } from "./zoom.ts";
 
 export type View = "iso" | "top" | "3d";
 export type Pick = { type: "node" | "edge" | "group"; id: string } | null;
@@ -33,6 +35,8 @@ interface NodeView {
   baseColor: THREE.Color;
   flames: THREE.Sprite[];
   mark: Mark;
+  event?: { kind: NodeEvent; elapsed: number };
+  removedLayout?: Layout;
 }
 
 interface EdgeView {
@@ -191,12 +195,16 @@ export class InfraScene {
   private camera: THREE.Camera = this.ortho;
   private controls: OrbitControls;
   private spin = 0;
+  private zoomAtStart = 0;
+  private rememberZoomAfterTween = false;
   private sun = new THREE.DirectionalLight(0xffffff, 2.4);
   private hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.5);
   private grid?: THREE.GridHelper;
   private nodes = new Map<string, NodeView>();
+  private removedNodes: NodeView[] = [];
   private edges = new Map<string, EdgeView>();
   private groups = new Map<string, THREE.Mesh>();
+  private plateTransitions = new Map<string, { from: Placed; to: Placed; elapsed: number; duration: number }>();
   private pickables: THREE.Object3D[] = [];
   private palette = readPalette();
   private infra?: Infra;
@@ -247,7 +255,17 @@ export class InfraScene {
   }
 
   /** Builds everything from scratch; keeps the camera unless `frame` is true. */
-  build(infra: Infra, layout: Layout, frame = false) {
+  build(infra: Infra, layout: Layout, frame = false, animate = false) {
+    const previous = [...this.nodes.values()].map((view) => view.node);
+    const arrivals = new Map([...this.nodes].filter(([, view]) => view.event?.kind === "added").map(([id, view]) => [id, view.event!]));
+    const departures = this.removedNodes.map((view) => ({ node: view.node, layout: view.removedLayout!, event: view.event! }));
+    const oldLayout = this.layout;
+    const plates = new Map([...this.groups].flatMap(([id, mesh]) => {
+      const at = oldLayout?.groups.get(id);
+      return at ? [[id, { ...at, x: mesh.position.x, z: mesh.position.z, w: at.w * mesh.scale.x, d: at.d * mesh.scale.z }] as const] : [];
+    }));
+    const previousTransitions = this.plateTransitions;
+    const events = animate && oldLayout ? nodeEvents(previous, infra.nodes) : new Map<string, NodeEvent>();
     this.infra = infra;
     this.layout = layout;
     this.palette = readPalette();
@@ -270,14 +288,47 @@ export class InfraScene {
     sc.updateProjectionMatrix();
 
     for (const g of infra.groups) this.addGroup(g, layout);
+    if (animate && oldLayout && !this.reducedMotion) for (const [id, to] of layout.groups) {
+      const mesh = this.groups.get(id);
+      if (!mesh) continue;
+      const from = plates.get(id) ?? { ...to, w: to.w * 0.15, d: to.d * 0.15 };
+      if (from.x === to.x && from.z === to.z && from.w === to.w && from.d === to.d) continue;
+      const previous = previousTransitions.get(id);
+      const sameTarget = previous && previous.to.x === to.x && previous.to.z === to.z && previous.to.w === to.w && previous.to.d === to.d;
+      this.plateTransitions.set(id, { from, to, elapsed: 0, duration: sameTarget ? Math.max(0.05, previous.duration - previous.elapsed) : 2.4 });
+      mesh.position.x = from.x;
+      mesh.position.z = from.z;
+      mesh.scale.set(from.w / to.w, 1, from.d / to.d);
+    }
     for (const n of infra.nodes) this.addNode(n, layout);
     for (const e of infra.edges) this.addEdge(e);
+
+    for (const [id, kind] of events) {
+      if (kind !== "removed") this.showNodeEvent(id, kind);
+      else if (!this.reducedMotion && oldLayout) {
+        const node = previous.find((item) => item.id === id)!;
+        this.addDeparture(node, oldLayout);
+      }
+    }
+    if (animate && !this.reducedMotion) for (const { node, layout, event } of departures)
+      if (!this.nodes.has(node.id) && !this.removedNodes.some((view) => view.node.id === node.id)) this.addDeparture(node, layout, event);
+    if (animate) for (const [id, event] of arrivals) {
+      const view = this.nodes.get(id);
+      if (view) { this.markNodeEvent(view, "added"); view.event = event; }
+    }
 
 
     if (this.selected && !this.exists(this.selected)) this.selected = null;
     this.applySelection();
     this.fade(1); // new meshes start where they belong; only later changes ease
-    if (frame) this.setView(this.view, false);
+    if (frame) {
+      this.tween = undefined;
+      this.rememberZoomAfterTween = false;
+      this.setView(this.view, false);
+      const pixels = this.pixelsPerUnit();
+      const saved = loadZoom();
+      if (saved !== undefined || pixels < 1.15) this.zoomBy((saved ?? 1.15) / pixels);
+    }
   }
 
   /** Re-reads the theme colours and rebuilds. */
@@ -291,6 +342,28 @@ export class InfraScene {
     if (!v) return;
     v.node = node;
     this.paintNode(v);
+  }
+
+  showNodeEvent(id: string, kind: NodeEvent = "changed") {
+    const view = this.nodes.get(id);
+    if (view) this.markNodeEvent(view, kind);
+  }
+
+  private markNodeEvent(view: NodeView, kind: NodeEvent) {
+    view.event = { kind, elapsed: 0 };
+    view.label.element.dataset.event = kind;
+  }
+
+  private addDeparture(node: InfraNode, layout: Layout, event?: { kind: NodeEvent; elapsed: number }) {
+    this.addNode(node, layout);
+    const ghost = this.nodes.get(node.id);
+    if (!ghost) return;
+    this.nodes.delete(node.id);
+    this.pickables = this.pickables.filter((item) => item !== ghost.body && item !== ghost.decal);
+    this.markNodeEvent(ghost, "removed");
+    if (event) ghost.event = event;
+    ghost.removedLayout = layout;
+    this.removedNodes.push(ghost);
   }
 
   updateEdge(edge: Edge) {
@@ -483,7 +556,7 @@ export class InfraScene {
     this.controls.autoRotateSpeed = 0.6 * direction;
   }
 
-  zoomBy(factor: number) {
+  zoomBy(factor: number, remember = false) {
     if (this.camera === this.ortho) {
       this.ortho.zoom = THREE.MathUtils.clamp(this.ortho.zoom * factor, 0.03, 20);
       this.ortho.updateProjectionMatrix();
@@ -491,6 +564,13 @@ export class InfraScene {
       const offset = this.persp.position.clone().sub(this.controls.target).divideScalar(factor);
       this.persp.position.copy(this.controls.target).add(offset);
     }
+    if (remember) saveZoom(this.pixelsPerUnit());
+  }
+
+  fitView() {
+    this.setView(this.view);
+    if (this.tween) this.rememberZoomAfterTween = true;
+    else saveZoom(this.pixelsPerUnit());
   }
 
   dispose() {
@@ -572,7 +652,7 @@ export class InfraScene {
 
     const el = document.createElement("div");
     el.className = "node-label";
-    el.innerHTML = `<b></b><small></small>`;
+    el.innerHTML = `<b></b><span class="capacity"></span><small></small>`;
     el.querySelector("b")!.textContent = node.label;
     const label = new CSS2DObject(el);
     label.center.set(0.5, 0);
@@ -627,8 +707,10 @@ export class InfraScene {
       this.content.remove(object);
     }
     this.nodes.clear();
+    this.removedNodes = [];
     this.edges.clear();
     this.groups.clear();
+    this.plateTransitions = new Map();
     this.pickables = [];
   }
 
@@ -656,6 +738,10 @@ export class InfraScene {
     v.ring.material.color.set(pulse && tint ? tint : ringColor);
     v.ring.visible = pulse || (state !== "ok" && !faded);
     v.label.element.dataset.state = state;
+    v.label.element.querySelector("b")!.textContent = v.node.label;
+    const capacity = capacityLabel(v.node);
+    v.label.element.querySelector(".capacity")!.textContent = capacity;
+    v.label.element.toggleAttribute("data-capacity", !!capacity);
     v.label.element.querySelector("small")!.textContent = state === "ok" ? "" : (v.node.message ?? state);
 
     if (state !== "fire") this.throb(v, 1);
@@ -772,6 +858,11 @@ export class InfraScene {
     controls.zoomToCursor = true;
     controls.autoRotate = this.spin !== 0;
     controls.autoRotateSpeed = 0.6 * this.spin;
+    controls.addEventListener("start", () => { this.zoomAtStart = this.pixelsPerUnit(); });
+    controls.addEventListener("end", () => {
+      const zoom = this.pixelsPerUnit();
+      if (Math.abs(zoom - this.zoomAtStart) > 1e-6) saveZoom(zoom);
+    });
     return controls;
   }
 
@@ -865,7 +956,10 @@ export class InfraScene {
       this.camera.position.lerpVectors(tw.from, tw.to, k);
       this.controls.target.lerpVectors(tw.fromTarget, tw.toTarget, k);
       if (tw.zoom) (this.ortho.zoom = THREE.MathUtils.lerp(tw.zoom[0], tw.zoom[1], k)), this.ortho.updateProjectionMatrix();
-      if (tw.t >= 1) this.tween = undefined;
+      if (tw.t >= 1) {
+        this.tween = undefined;
+        if (this.rememberZoomAfterTween) saveZoom(this.pixelsPerUnit()), (this.rememberZoomAfterTween = false);
+      }
     }
     // A camera glide (Fit, a view switch) would fight the spin and look like it turns backwards: pause it meanwhile.
     this.controls.autoRotate = this.spin !== 0 && !this.tween;
@@ -878,9 +972,64 @@ export class InfraScene {
     this.animateFlows(dt);
     this.animateStates(time);
     this.fade(Math.min(1, dt * 9));
+    this.animateNodeEvents(dt);
+    this.animatePlates(dt);
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
   };
+
+  private animatePlates(dt: number) {
+    for (const [id, transition] of this.plateTransitions) {
+      const mesh = this.groups.get(id);
+      if (!mesh) { this.plateTransitions.delete(id); continue; }
+      transition.elapsed += dt;
+      const at = interpolatePlate(transition.from, transition.to, transition.elapsed / transition.duration);
+      mesh.position.x = at.x;
+      mesh.position.z = at.z;
+      mesh.scale.set(at.w / transition.to.w, 1, at.d / transition.to.d);
+      if (transition.elapsed >= transition.duration) this.plateTransitions.delete(id);
+    }
+  }
+
+  private animateNodeEvents(dt: number) {
+    for (const v of [...this.nodes.values(), ...this.removedNodes]) {
+      const event = v.event;
+      if (!event) continue;
+      event.elapsed += dt;
+      const progress = Math.min(1, event.elapsed / (event.kind === "changed" ? 1.6 : 2.4));
+      if (!this.reducedMotion) {
+        const pulse = Math.sin(Math.PI * progress);
+        const scale = event.kind === "added" ? 0.45 + 0.55 * progress * progress * (3 - 2 * progress) : event.kind === "removed" ? 1 - progress * 0.9 : 1 + 0.14 * pulse;
+        this.throb(v, scale);
+        v.ring.visible = true;
+        v.ring.material.color.set(event.kind === "added" ? "#10b981" : event.kind === "removed" ? "#ef4444" : "#f59e0b");
+        v.ring.scale.setScalar(1 + pulse * 0.3);
+        v.ring.material.opacity = 0.5 + 0.5 * pulse;
+        if (event.kind === "removed") {
+          v.body.material.opacity = 1 - progress;
+          if (v.decal) ((v.decal as THREE.Mesh).material as THREE.Material).opacity = 1 - progress;
+          v.label.element.style.opacity = String(1 - progress);
+        }
+      }
+      if (progress < 1) continue;
+      v.event = undefined;
+      delete v.label.element.dataset.event;
+      if (event.kind !== "removed") {
+        this.throb(v, 1);
+        this.paintNode(v);
+      } else {
+        for (const object of [v.body, v.decal, v.ring, v.label, ...v.flames]) {
+          if (!object) continue;
+          if (object instanceof CSS2DObject) object.element.remove();
+          const mesh = object as THREE.Mesh;
+          mesh.geometry?.dispose();
+          (mesh.material as THREE.Material | undefined)?.dispose();
+          this.content.remove(object);
+        }
+        this.removedNodes = this.removedNodes.filter((item) => item !== v);
+      }
+    }
+  }
 
   /** Liquid in the pipes: the colour wave slides toward the target at the connection's speed. */
   private animateFlows(dt: number) {

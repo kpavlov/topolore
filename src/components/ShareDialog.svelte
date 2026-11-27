@@ -17,7 +17,7 @@
   let done = $state("");
 
   export function open(infra: Infra, sources: SourceFile[]) {
-    content = { infra: structuredClone(infra), sources };
+    content = { infra: $state.snapshot(infra), sources };
     hide = true;
     layoutOnly = false;
     done = "";
@@ -29,6 +29,7 @@
   async function build(text: string, redacting: boolean): Promise<string> {
     const url = new URL(location.href);
     url.searchParams.delete("src");
+    url.searchParams.delete("sample");
     url.searchParams.delete("infra");
     // A stream address can carry its own credentials.
     const stream = url.searchParams.get("stream") ?? url.searchParams.get("events");

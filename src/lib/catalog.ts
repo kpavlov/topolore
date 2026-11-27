@@ -13,6 +13,21 @@ export interface Look {
 
 const ICONS = icons as Record<string, { body: string; width: number; height: number }>;
 
+const EXTERNAL_ICONS: Record<string, string> = {
+  people: '<circle cx="12" cy="8" r="3"/><path d="M5 19v-1a7 7 0 0 1 14 0v1M4 10a2.5 2.5 0 0 0 0 5M20 10a2.5 2.5 0 0 1 0 5"/>',
+  person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20v-1a7 7 0 0 1 14 0v1"/>',
+  mobile: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M10 5h4M11 19h2"/>',
+  browser: '<rect x="2" y="4" width="20" height="15" rx="2"/><path d="M2 8h20M5 6h.01M8 6h.01M9 22h6M12 19v3"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9z"/>',
+  integration: '<path d="M9 8 7 6a3 3 0 0 0-4 4l4 4a3 3 0 0 0 4 0l1-1M15 16l2 2a3 3 0 0 0 4-4l-4-4a3 3 0 0 0-4 0l-1 1M8 16l8-8"/>',
+};
+
+const EXTERNAL_KIND: Record<string, string> = {
+  user: "person", person: "person", users: "people", people: "people", customer: "people", customers: "people", shopper: "people", shoppers: "people",
+  mobile: "mobile", phone: "mobile", device: "mobile", browser: "browser", client: "browser",
+  internet: "globe", external: "globe", partner: "integration", partners: "integration", integration: "integration", "api-client": "integration",
+};
+
 /** Services by what they are: decides the 3D shape and the tint. */
 const CATEGORY: [RegExp, Category, Shape][] = [
   [/rds|aurora|sql|postgres|mysql|mongo|cosmos|dynamo|documentdb|keyspaces|neptune|redshift|bigquery|spanner|firestore|cassandra|clickhouse|snowflake|timestream|elasticsearch|open-search|database|db$/, "data", "cylinder"],
@@ -44,6 +59,8 @@ const PROVIDER_LOGO: Record<string, string> = {
 export function lookOf(kind: string): Look {
   const [provider, ...rest] = kind.toLowerCase().split(".");
   const service = rest.join(".") || provider;
+  const external = (!rest.length || ["client", "external", "user", "customer", "device"].includes(provider)) && EXTERNAL_KIND[service];
+  if (external) return { shape: /^(customers?|shoppers?)$/.test(service) || external === "mobile" ? "slab" : "sphere", category: "edge", provider, icon: `external-${external}` };
   const [, category, shape] = CATEGORY.find(([re]) => re.test(service)) ??
     (provider === "saas" ? [, "external", "box"] : [, "compute", "box"]);
   const look: Look = { shape, category, provider };
@@ -66,6 +83,9 @@ const ALIASES: Record<string, string> = {
 };
 
 export function iconSvg(name: string): string | undefined {
+  const external = EXTERNAL_ICONS[name.replace(/^external-/, "")];
+  if (name.startsWith("external-") && external)
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${external}</svg>`;
   const icon = ICONS[name];
   return icon && `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 ${icon.width} ${icon.height}">${icon.body}</svg>`;
 }

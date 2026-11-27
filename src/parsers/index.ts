@@ -27,7 +27,7 @@ export interface Loaded {
 const IGNORED = /(^|\/)(\.git|node_modules|\.terraform)\/|(^|\/)(\.terraform\.lock\.hcl|package-lock\.json)$/;
 
 /** Whether a file found in a folder is worth reading. */
-export const wanted = (path: string) => /\.(tf|hcl|json|ya?ml)$/i.test(path) && !IGNORED.test(path);
+export const wanted = (path: string) => /\.(tf|hcl|json|jsonl|ya?ml)$/i.test(path) && !IGNORED.test(path);
 
 const HCL_BLOCK = /^[ \t]*(resource|node|group|edge|module|provider|terraform|variable|locals|data|output)\b[^\n:]*\{/m;
 
@@ -59,7 +59,7 @@ export function detectFormat(path: string, text: string): Format {
 function merge(parts: Infra[]): Infra {
   if (parts.length === 1) return parts[0];
   const taken = new Set<string>();
-  const out: Infra = { title: parts.find((p) => p.title)?.title, groups: [], nodes: [], edges: [] };
+  const out: Infra = { title: parts.find((p) => p.title)?.title, links: parts.flatMap((p) => p.links ?? []), groups: [], nodes: [], edges: [] };
   for (const part of parts) {
     const renamed = new Map<string, string>();
     for (const item of [...part.groups, ...part.nodes]) {

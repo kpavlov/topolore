@@ -1,0 +1,7 @@
+[
+  { "id": "platform", "group": "Examples", "label": "Global retail platform (HCL)", "file": "platform.hcl", "events": "platform.jsonl" },
+  { "id": "multicloud", "group": "Examples", "label": "Multi-cloud shop (JSON)", "file": "multicloud.json" },
+  { "id": "serverless", "group": "Examples", "label": "Serverless (Terraform)", "file": "serverless.tf" },
+  { "id": "azureIncident", "group": "Postmortems", "label": "Azure Front Door · July 2024", "file": "azure-incident.json", "events": "azure-incident.jsonl" },
+  { "id": "githubActionsIncident", "group": "Postmortems", "label": "GitHub Actions runners · May 2026", "file": "github-actions-incident.json", "events": "github-actions-incident.jsonl" }
+]

@@ -41,6 +41,11 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); ove
 .node-label { font: 500 11px/1.2 var(--sans); color: var(--ink); text-align: center; white-space: nowrap;
   text-shadow: 0 0 3px var(--scene), 0 0 3px var(--scene), 0 0 6px var(--scene); transition: opacity 0.2s; }
 .node-label small { display: block; font: 600 10px var(--mono); }
+.node-label .capacity { display: block; color: var(--muted); font: 600 10px var(--mono); }
+.node-label[data-event]::after { display: table; margin: 2px auto 0; padding: 1px 6px; border-radius: 99px; color: #fff; text-shadow: none; font: 600 10px var(--mono); }
+.node-label[data-event="added"]::after { content: "+ Added"; background: #047857; }
+.node-label[data-event="changed"]::after { content: "~ Changed"; background: #a16207; }
+.node-label[data-event="removed"]::after { content: "− Removed"; background: #b91c1c; }
 .node-label[data-state="fire"] small { color: var(--fire); }
 .node-label[data-state="down"] small { color: var(--crit); }
 .node-label[data-state="degraded"] small { color: var(--warn); }
@@ -56,12 +61,12 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); ove
 .edge-marker[data-state="slow"] { background: var(--warn); }
 .labels.far .node-label small, .labels.far .group-label span { display: none; }
 .labels.far .node-label { font-size: 9px; }
-.labels.tiny .node-label:not([data-state="down"]):not([data-state="fire"]):not(.selected):not(.highlighted):not([data-badge]) { display: none; }
+.labels.tiny .node-label:not([data-state="down"]):not([data-state="fire"]):not(.selected):not(.highlighted):not([data-badge]):not([data-capacity]):not([data-event]) { display: none; }
 .labels.tiny .group-label { font-size: 9px; }
 .node-label.highlighted b { color: var(--scene); background: var(--accent); padding: 1px 6px; border-radius: 99px; text-shadow: none; }
 
 /* Controls and panels shared by the app and its components. */
-.panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); backdrop-filter: blur(6px); }
+.panel { position: absolute; background: rgb(from var(--panel) r g b / 0.5); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); backdrop-filter: blur(6px); }
 input:not([type]), select, button, .button { font: inherit; font-size: 13px; color: var(--ink); background: transparent;
   border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 input:not([type]) { width: 230px; cursor: text; }

@@ -48,9 +48,29 @@ export interface Edge {
 
 export interface Infra {
   title?: string;
+  links?: { label: string; url: string }[];
   groups: Group[];
   nodes: InfraNode[];
   edges: Edge[];
+}
+
+/** Compact capacity details shown on a node; live metrics override the source values. */
+export function capacityLabel(node: InfraNode): string {
+  const props = node.props ?? {};
+  const replicas = node.metrics?.replicas ?? props.replicas;
+  const instances = node.metrics?.instances ?? props.instances ?? props.desired_capacity ?? props.desiredCapacity;
+  const kind = props.instance_type ?? props.instanceType;
+  const group = props.autoscaling_group ?? props.autoScalingGroup;
+  const min = props.min_size ?? props.minSize;
+  const max = props.max_size ?? props.maxSize;
+  const count = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  return [
+    count(replicas) ? `${replicas} ${replicas === 1 ? "pod" : "pods"}` : undefined,
+    count(instances) ? `${instances} ${instances === 1 ? "instance" : "instances"}` : undefined,
+    typeof kind === "string" && kind ? kind : undefined,
+    typeof group === "string" && group ? `ASG ${group}` : undefined,
+    count(min) && count(max) ? `min ${min} · max ${max}` : undefined,
+  ].filter(Boolean).join(" · ");
 }
 
 /** One message from the update stream. Unknown ids that carry a `kind` add a node or an edge. */
@@ -58,7 +78,7 @@ export type Update =
   | ({ type: "node"; id: string } & Partial<Omit<InfraNode, "id">>)
   | ({ type: "edge"; id?: string; from?: string; to?: string } & Partial<Omit<Edge, "id" | "from" | "to">>)
   | ({ type: "group"; id: string } & Partial<Omit<Group, "id">>)
-  | { type: "remove"; id: string }
+  | { type: "remove"; id: string; message?: string }
   | ({ type: "snapshot" } & Partial<Infra>);
 
 /**
@@ -97,6 +117,15 @@ export const edgeId = (from: string, to: string) => `${from}->${to}`;
 export function normalize(raw: unknown): Infra {
   const data = raw as Partial<Infra>;
   if (!data || typeof data !== "object") throw new Error("The file must hold an object with nodes, groups and edges.");
+  if (data.links !== undefined && !Array.isArray(data.links)) throw new Error("Topology links must be a list.");
+  const links = data.links?.map((link) => {
+    if (!link || typeof link.label !== "string" || !link.label.trim() || typeof link.url !== "string")
+      throw new Error("Each topology link needs a label and URL.");
+    try {
+      if (!["https:", "http:"].includes(new URL(link.url).protocol)) throw new Error();
+    } catch { throw new Error(`Topology link "${link.label}" needs an absolute HTTP or HTTPS URL.`); }
+    return { label: link.label, url: link.url };
+  });
   const groups = (data.groups ?? []).map((g) => ({ ...g, label: g.label ?? g.id }));
   const nodes = (data.nodes ?? []).map((n) => ({ ...n, label: n.label ?? n.id, kind: n.kind ?? "generic", state: n.state ?? "ok" }));
   const ids = new Set([...groups.map((g) => g.id), ...nodes.map((n) => n.id)]);
@@ -120,7 +149,7 @@ export function normalize(raw: unknown): Infra {
       if (!nodes.some((n) => n.id === end)) throw new Error(`Edge ${e.from} → ${e.to} names "${end}", which is not a node.`);
     return { ...e, id: e.id ?? edgeId(e.from, e.to), state: e.state ?? "ok" };
   });
-  return { title: data.title, groups, nodes, edges };
+  return { title: data.title, links, groups, nodes, edges };
 }
 
 /** Applies one update in place. Returns true when the topology changed and the layout must be redone. */

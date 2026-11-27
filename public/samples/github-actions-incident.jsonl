@@ -1,0 +1,16 @@
+// GitHub availability report: https://github.blog/news-insights/company-news/github-availability-report-may-2026/
+// The topology and links are schematic. The temporary recovery node represents a process, not an individual machine.
+// GitHub did not publish runner counts, instance sizes, pool limits, or individual runner additions and removals.
+// Remediation after a separate May 5 hosted-runner incident introduced the configuration data behind this incident.
+{"at":"2026-05-06T06:45:00Z","type":"node","id":"allocator","state":"degraded","message":"Unexpected configuration data from the previous day's remediation blocks new allocations as daily load rises."}
+{"at":"2026-05-06T06:45:00Z","type":"node","id":"runner-pool","state":"degraded","message":"Standard Ubuntu hosted runners are degraded; about 17.1% of standard-runner jobs fail over the reported impact window."}
+{"at":"2026-05-06T06:45:00Z","type":"edge","id":"workflows->allocator","state":"slow","message":"Some jobs requesting standard runners fail."}
+{"at":"2026-05-06T08:51:00Z","type":"remove","id":"config","message":"GitHub removes the problematic configuration data; allocations resume."}
+{"at":"2026-05-06T08:51:00Z","type":"node","id":"allocator","state":"degraded","message":"Allocations resume; runner pools can scale back up and recover."}
+{"at":"2026-05-06T08:51:00Z","type":"node","id":"recovery","label":"Pool recovery (schematic)","kind":"compute","parent":"github","message":"Schematic recovery process: runner pools begin scaling back up. Individual machines and counts were not reported."}
+{"at":"2026-05-06T08:51:00Z","type":"edge","from":"allocator","to":"recovery","label":"Resumed allocations (schematic)"}
+{"at":"2026-05-06T08:51:00Z","type":"edge","from":"recovery","to":"runner-pool","label":"Capacity recovery (schematic)"}
+{"at":"2026-05-06T09:15:00Z","type":"node","id":"allocator","state":"ok","message":"The reported customer-impact window ends."}
+{"at":"2026-05-06T09:15:00Z","type":"node","id":"runner-pool","state":"ok","message":"Standard Ubuntu hosted runner impact ends."}
+{"at":"2026-05-06T09:15:00Z","type":"edge","id":"workflows->allocator","state":"ok","message":"The reported impact window ends."}
+{"at":"2026-05-06T09:15:00Z","type":"remove","id":"recovery","message":"The schematic recovery phase ends; no individual runner removal is implied."}

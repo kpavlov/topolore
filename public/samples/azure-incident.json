@@ -1,0 +1,25 @@
+{
+  "title": "Azure Front Door · 30 July 2024 (schematic)",
+  "links": [{ "label": "Microsoft postmortem", "url": "https://azure.status.microsoft/status/history/?trackingId=KTY1-HW8" }],
+  "groups": [
+    { "id": "azure", "label": "Azure network (schematic)", "kind": "azure" },
+    { "id": "europe", "label": "Europe (schematic)", "kind": "azure", "parent": "azure" }
+  ],
+  "nodes": [
+    { "id": "customers-europe", "label": "Affected traffic · Europe", "kind": "customers" },
+    { "id": "customers-global", "label": "Affected traffic · other regions", "kind": "customers" },
+    { "id": "control", "label": "Network control plane → site", "kind": "azure.network", "parent": "europe" },
+    { "id": "ddos", "label": "Network DDoS protection · Europe", "kind": "azure.network", "parent": "europe" },
+    { "id": "device", "label": "European network device", "kind": "azure.network", "parent": "europe" },
+    { "id": "afd", "label": "Azure Front Door / CDN", "kind": "azure.front-door", "parent": "azure" },
+    { "id": "services", "label": "Azure portal and dependent services", "kind": "azure.app", "parent": "azure" }
+  ],
+  "edges": [
+    { "from": "customers-europe", "to": "afd", "label": "Normal path (schematic)" },
+    { "from": "customers-global", "to": "afd", "label": "Normal path (schematic)" },
+    { "from": "control", "to": "device", "label": "Control connection (schematic)" },
+    { "from": "ddos", "to": "device", "label": "Protection path (schematic)" },
+    { "from": "device", "to": "afd", "label": "Front Door path (schematic)" },
+    { "from": "afd", "to": "services", "label": "Dependent services" }
+  ]
+}

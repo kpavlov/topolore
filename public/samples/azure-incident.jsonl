@@ -1,0 +1,25 @@
+// Microsoft post-incident review: https://azure.status.microsoft/status/history/?trackingId=KTY1-HW8
+// The affected-traffic nodes, control connection, route and device relationships are schematic, not a map of Microsoft's network.
+// The alternate-route node represents rerouting, not a reported new device. No traffic volumes or device counts are implied.
+{"at":"2024-07-30T10:15:00Z","type":"node","id":"ddos","message":"A distributed TCP SYN flood occurs at multiple Front Door and CDN sites; automated protection mitigates it with minimal customer impact."}
+{"at":"2024-07-30T10:45:00Z","type":"node","id":"ddos","message":"The reported DDoS attack window ends; a small subset of clients without retry logic may have seen failures."}
+{"at":"2024-07-30T11:45:00Z","type":"node","id":"control","state":"down","message":"As DDoS protection disengages, routes cannot be updated at a European site because its control-plane connection has failed during a local power outage."}
+{"at":"2024-07-30T11:45:00Z","type":"edge","id":"customers-europe->afd","state":"idle","message":"Schematic: affected European traffic continues through DDoS protection instead of returning to the direct path."}
+{"at":"2024-07-30T11:45:00Z","type":"edge","id":"customers-global->afd","state":"idle","message":"Schematic: a separate configuration issue sends traffic from outside Europe toward protection in Europe."}
+{"at":"2024-07-30T11:45:00Z","type":"edge","from":"customers-europe","to":"ddos","state":"slow","label":"Affected traffic (schematic)"}
+{"at":"2024-07-30T11:45:00Z","type":"edge","from":"customers-global","to":"ddos","state":"slow","label":"Affected traffic (schematic)"}
+{"at":"2024-07-30T11:45:00Z","type":"edge","id":"ddos->device","state":"slow","message":"Localized congestion causes latency and connection failures across multiple regions."}
+{"at":"2024-07-30T11:45:00Z","type":"node","id":"services","state":"degraded","message":"Customer impact begins; dependent Microsoft services experience connection failures and latency."}
+{"at":"2024-07-30T11:47:00Z","type":"node","id":"services","message":"The Azure Portal team detects initial degradation and starts investigating."}
+{"at":"2024-07-30T12:10:00Z","type":"node","id":"control","message":"Monitoring correlates the Portal incident with a network issue at a European site; network engineers engage."}
+{"at":"2024-07-30T12:55:00Z","type":"node","id":"reroute","label":"Alternate route (schematic)","kind":"azure.network","parent":"azure","message":"Engineers confirm localized congestion and begin mitigation, including rerouting traffic."}
+{"at":"2024-07-30T12:55:00Z","type":"edge","from":"customers-europe","to":"reroute","label":"Mitigation path (schematic)"}
+{"at":"2024-07-30T12:55:00Z","type":"edge","from":"customers-global","to":"reroute","label":"Mitigation path (schematic)"}
+{"at":"2024-07-30T12:55:00Z","type":"edge","from":"reroute","to":"afd","label":"Alternate path (schematic)"}
+{"at":"2024-07-30T13:13:00Z","type":"node","id":"services","message":"Microsoft publishes that it is investigating global connection issues and Azure service timeouts."}
+{"at":"2024-07-30T13:58:00Z","type":"edge","id":"ddos->device","state":"slow","message":"Rerouting mitigates most impact; isolated connection failures continue."}
+{"at":"2024-07-30T16:15:00Z","type":"node","id":"device","state":"degraded","message":"Engineers identify a European device still attracting traffic after a control-plane command to stop."}
+{"at":"2024-07-30T16:58:00Z","type":"node","id":"control","message":"The control plane is ordered to reissue its commands, but the problematic device is inaccessible."}
+{"at":"2024-07-30T17:50:00Z","type":"node","id":"device","message":"Safe removal begins; the network is scanned for other potential issues."}
+{"at":"2024-07-30T19:32:00Z","type":"remove","id":"device","message":"Safe removal of the device from the network is completed."}
+{"at":"2024-07-30T19:43:00Z","type":"node","id":"services","state":"ok","message":"Customer impact is mitigated; availability returns to pre-incident levels."}

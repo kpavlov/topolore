@@ -2,9 +2,9 @@
 # an event backbone on MSK, analytics on GCP and a ring of SaaS providers.
 title = "Nimbus Retail · global platform"
 
-node "shoppers" { kind = "internet"  label = "Shoppers" }
+node "shoppers" { kind = "customers"  label = "Shoppers" }
 node "mobile" { kind = "client.mobile"  label = "Mobile apps" }
-node "partners" { kind = "client"  label = "Partner integrations" }
+node "partners" { kind = "partner"  label = "Partner integrations" }
 
 group "edge" { label = "Cloudflare edge"
   node "cdn" { kind = "cloudflare"  label = "CDN + WAF"  calls = ["edge-worker"] }
@@ -23,6 +23,7 @@ group "use1" { label = "AWS us-east-1 (primary)"  kind = "aws"
 
     group "use1-eks" { label = "EKS shop-prod"  kind = "aws.eks"
       node "use1-ingress" { kind = "k8s.ingress"  label = "envoy gateway" }
+      node "use1-nodepool" { kind = "aws.autoscaling-group"  label = "EKS worker pool"  instances = 6  instance_type = "m6i.large"  autoscaling_group = "shop-prod-workers"  min_size = 3  max_size = 12  calls = ["web"] }
 
       group "use1-web" { label = "namespace: storefront"  kind = "k8s.namespace"
         node "web" { kind = "k8s.deployment"  label = "web (SSR)"  replicas = 12 }

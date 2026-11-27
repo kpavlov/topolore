@@ -8,7 +8,7 @@
     { "id": "aws", "label": "AWS us-east-1", "kind": "aws" }
   ],
   "nodes": [
-    { "id": "shoppers", "label": "Shoppers", "kind": "internet" },
+    { "id": "shoppers", "label": "Shoppers", "kind": "customers" },
     { "id": "cdn", "label": "CDN + WAF", "kind": "cloudflare.cdn", "parent": "edge" },
     { "id": "worker", "label": "edge router", "kind": "cloudflare.workers", "parent": "edge" },
     { "id": "storefront", "label": "storefront", "kind": "gcp.run", "parent": "gcp", "metrics": { "instances": 6 } },
